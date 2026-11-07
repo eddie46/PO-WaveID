@@ -85,6 +85,8 @@ import {
   saveExpenseCloud,
   updateExpenseCloud,
   deleteExpenseCloud,
+  saveAdminConfigCloud,
+  saveWAConfigCloud,
 } from '../services/googleCloudSync';
 
 interface AdminPanelViewProps {
@@ -385,9 +387,185 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
   const [isUploadingQRIS, setIsUploadingQRIS] = useState(false);
   const [qrisUploadMsg, setQrisUploadMsg] = useState<string | null>(null);
 
-  // Google Sheets Sync Logic
+  // Google Sheets Sync & Verification Diagnostic Logic
   const [syncingSheets, setSyncingSheets] = useState(false);
   const [sheetsSyncResult, setSheetsSyncResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [isVerifyingSync, setIsVerifyingSync] = useState(false);
+  const [showRawDiagnosticJson, setShowRawDiagnosticJson] = useState(false);
+  const [syncDiagReport, setSyncDiagReport] = useState<{
+    checkedAt: string;
+    rawResponse: any;
+    hasSettingsSheet: boolean;
+    allMatched: boolean;
+    fields: Array<{
+      key: string;
+      label: string;
+      localValue: string;
+      remoteValue: string;
+      matched: boolean;
+    }>;
+    error?: string;
+  } | null>(null);
+
+  const handleRunSyncVerification = async () => {
+    setIsVerifyingSync(true);
+    setSheetsSyncResult(null);
+    try {
+      const raw = await fetchAllDataFromSheets();
+      if (!raw) {
+        setSyncDiagReport({
+          checkedAt: new Date().toLocaleTimeString('id-ID'),
+          rawResponse: null,
+          hasSettingsSheet: false,
+          allMatched: false,
+          fields: [],
+          error: 'Gagal mengambil JSON dari Google Sheets API. Pastikan URL Apps Script benar dan sudah di-deploy dengan akses "Anyone".',
+        });
+        return;
+      }
+
+      const remoteAdmin = raw.settings?.adminConfig || {};
+      const remoteWA = raw.settings?.waConfig || {};
+      const remoteProductsCount = Array.isArray(raw.products) ? raw.products.length : 0;
+      const remoteOrdersCount = Array.isArray(raw.orders) ? raw.orders.length : 0;
+      const remoteExpensesCount = Array.isArray(raw.expenses) ? raw.expenses.length : 0;
+
+      const hasSettingsSheet = Boolean(raw.settings && (raw.settings.adminConfig || raw.settings.waConfig));
+
+      const fields = [
+        {
+          key: 'danaPhone',
+          label: 'Nomor Akun DANA',
+          localValue: String(formData.danaPhone || '(Kosong)'),
+          remoteValue:
+            remoteAdmin.danaPhone !== undefined
+              ? String(remoteAdmin.danaPhone || '(Kosong)')
+              : '(Belum ada di Sheet Settings)',
+          matched: String(formData.danaPhone || '') === String(remoteAdmin.danaPhone || ''),
+        },
+        {
+          key: 'danaAccountName',
+          label: 'Nama Pemilik DANA',
+          localValue: String(formData.danaAccountName || '(Kosong)'),
+          remoteValue:
+            remoteAdmin.danaAccountName !== undefined
+              ? String(remoteAdmin.danaAccountName || '(Kosong)')
+              : '(Belum ada di Sheet Settings)',
+          matched: String(formData.danaAccountName || '') === String(remoteAdmin.danaAccountName || ''),
+        },
+        {
+          key: 'waMode',
+          label: 'Mode Tujuan WhatsApp',
+          localValue: String(formWA.mode || 'group_link'),
+          remoteValue: String(remoteWA.mode || '(Belum ada di Sheet Settings)'),
+          matched: String(formWA.mode || '') === String(remoteWA.mode || ''),
+        },
+        {
+          key: 'waTarget',
+          label: 'Nomor WA / Link Grup WA',
+          localValue: String(
+            (formWA.mode === 'phone_number' ? formWA.phoneNumber : formWA.groupLink) || '(Kosong)'
+          ),
+          remoteValue:
+            remoteWA.mode !== undefined
+              ? String(
+                  (remoteWA.mode === 'phone_number' ? remoteWA.phoneNumber : remoteWA.groupLink) ||
+                    '(Kosong)'
+                )
+              : '(Belum ada di Sheet Settings)',
+          matched:
+            String(formWA.phoneNumber || '') === String(remoteWA.phoneNumber || '') &&
+            String(formWA.groupLink || '') === String(remoteWA.groupLink || ''),
+        },
+        {
+          key: 'paidGroupLink',
+          label: 'Link Grup WA Lunas',
+          localValue: String(formWA.paidGroupLink || '(Kosong)'),
+          remoteValue:
+            remoteWA.paidGroupLink !== undefined
+              ? String(remoteWA.paidGroupLink || '(Kosong)')
+              : '(Belum ada di Sheet Settings)',
+          matched: String(formWA.paidGroupLink || '') === String(remoteWA.paidGroupLink || ''),
+        },
+        {
+          key: 'productsCount',
+          label: 'Jumlah Produk Katalog',
+          localValue: `${formData.products.length} produk (${formData.products.map((p) => p.name).join(', ') || '-'})`,
+          remoteValue: `${remoteProductsCount} produk (${Array.isArray(raw.products) ? raw.products.map((p: any) => p.name).join(', ') || '-' : '-'})`,
+          matched:
+            formData.products.length === remoteProductsCount &&
+            JSON.stringify(formData.products.map((p) => ({ id: p.id, name: p.name, price: Number(p.price), stock: Number(p.stock) }))) ===
+              JSON.stringify(
+                (Array.isArray(raw.products) ? raw.products : []).map((p: any) => ({
+                  id: p.id,
+                  name: p.name,
+                  price: Number(p.price),
+                  stock: Number(p.stock),
+                }))
+              ),
+        },
+        {
+          key: 'ordersCount',
+          label: 'Total Pesanan (PO)',
+          localValue: `${orders.length} pesanan`,
+          remoteValue: `${remoteOrdersCount} pesanan`,
+          matched: orders.length === remoteOrdersCount,
+        },
+        {
+          key: 'expensesCount',
+          label: 'Total Biaya Operasional',
+          localValue: `${expenses.length} transaksi`,
+          remoteValue: `${remoteExpensesCount} transaksi`,
+          matched: expenses.length === remoteExpensesCount,
+        },
+      ];
+
+      const allMatched = fields.every((f) => f.matched);
+
+      setSyncDiagReport({
+        checkedAt: new Date().toLocaleTimeString('id-ID'),
+        rawResponse: raw,
+        hasSettingsSheet,
+        allMatched,
+        fields,
+      });
+    } catch (err: any) {
+      setSyncDiagReport({
+        checkedAt: new Date().toLocaleTimeString('id-ID'),
+        rawResponse: null,
+        hasSettingsSheet: false,
+        allMatched: false,
+        fields: [],
+        error: 'Terjadi kesalahan saat memverifikasi sinkronisasi: ' + (err?.message || 'Error'),
+      });
+    } finally {
+      setIsVerifyingSync(false);
+    }
+  };
+
+  const handleForcePushLocalToSheets = async () => {
+    setSyncingSheets(true);
+    setSheetsSyncResult(null);
+    try {
+      setIsDirtySettings(false);
+      await saveAdminConfigCloud(formData);
+      await saveWAConfigCloud(formWA);
+      onSaveConfig(formData);
+      onSaveWAConfig(formWA);
+      setSheetsSyncResult({
+        success: true,
+        message: 'Berhasil mendorong (Push) pengaturan DANA, WA, dan Produk dari aplikasi ke Google Sheets!',
+      });
+      await handleRunSyncVerification();
+    } catch (err: any) {
+      setSheetsSyncResult({
+        success: false,
+        message: 'Gagal mengirim data ke Google Sheets: ' + (err?.message || 'Error'),
+      });
+    } finally {
+      setSyncingSheets(false);
+    }
+  };
 
   const handleManualSheetsSync = async () => {
     setSyncingSheets(true);
@@ -403,7 +581,29 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
           simpleStorage.saveExpenses(data.expenses);
           setExpenses(data.expenses);
         }
-        setSheetsSyncResult({ success: true, message: 'Berhasil sinkronisasi data dari Google Sheets!' });
+        if (data.settings?.adminConfig || Array.isArray(data.products)) {
+          const mergedAdmin: AdminStoreConfig = {
+            ...formData,
+            ...(data.settings?.adminConfig || {}),
+            products: Array.isArray(data.products) && data.products.length > 0 ? data.products : formData.products,
+          };
+          setIsDirtySettings(false);
+          setFormData(mergedAdmin);
+          simpleStorage.saveAdminConfig(mergedAdmin);
+          onSaveConfig(mergedAdmin);
+        }
+        if (data.settings?.waConfig) {
+          const mergedWA: WAConfig = {
+            ...formWA,
+            ...data.settings.waConfig,
+          };
+          setIsDirtySettings(false);
+          setFormWA(mergedWA);
+          simpleStorage.saveWAConfig(mergedWA);
+          onSaveWAConfig(mergedWA);
+        }
+        setSheetsSyncResult({ success: true, message: 'Berhasil menarik (Pull) seluruh data dari Google Sheets ke aplikasi!' });
+        await handleRunSyncVerification();
       } else {
         setSheetsSyncResult({ success: false, message: 'Gagal mengambil data. Periksa URL Apps Script Anda.' });
       }
@@ -1230,7 +1430,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
 
   const handleSaveAll = (e: React.FormEvent) => {
     e.preventDefault();
-    setConfirmSaveSettings(true);
+    handleConfirmExecuteSaveSettings(false);
   };
 
   const handleConfirmExecuteSaveSettings = (shouldNavigateBack = false) => {
@@ -3143,7 +3343,6 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                   <Smartphone className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
                   <input
                     type="text"
-                    required
                     value={formData.danaPhone}
                     onChange={(e) => {
                       setFormData({ ...formData, danaPhone: e.target.value });
@@ -3378,7 +3577,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                   Tautan Undangan Grup WhatsApp Pemesanan *
                 </label>
                 <input
-                  type="url"
+                  type="text"
                   value={formWA.groupLink}
                   onChange={(e) => {
                     setFormWA({ ...formWA, groupLink: e.target.value });
@@ -3387,7 +3586,6 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                   }}
                   placeholder="https://chat.whatsapp.com/GrupPemesananPCB..."
                   className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none font-mono"
-                  required
                 />
               </div>
 
@@ -3424,7 +3622,6 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                   }}
                   placeholder="6281234567890 atau 081234567890"
                   className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none font-mono"
-                  required
                 />
               </div>
             </div>
@@ -3440,7 +3637,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                 Link Grup WA LUNAS (Diundang Otomatis Saat Tandai Lunas) *
               </label>
               <input
-                type="url"
+                type="text"
                 value={formWA.paidGroupLink || ''}
                 onChange={(e) => {
                   setFormWA({ ...formWA, paidGroupLink: e.target.value });
@@ -3529,7 +3726,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                 URL Web App Google Apps Script
               </label>
-              <div className="flex gap-2">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <input
                   type="text"
                   placeholder="https://script.google.com/macros/s/.../exec"
@@ -3539,26 +3736,204 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                     onSaveConfig({ ...config, googleSheetsUrl: url });
                     saveGoogleSheetsUrl(url);
                   }}
-                  className="flex-1 px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500/20 outline-none"
+                  className="flex-1 px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono focus:ring-2 focus:ring-indigo-500/20 outline-none"
                 />
+                <button
+                  type="button"
+                  onClick={handleRunSyncVerification}
+                  disabled={isVerifyingSync || syncingSheets}
+                  className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 text-xs font-extrabold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-all shadow-xs cursor-pointer disabled:opacity-50 shrink-0"
+                >
+                  {isVerifyingSync ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="w-4 h-4" />
+                  )}
+                  <span>Cek &amp; Verifikasi Sinkronisasi</span>
+                </button>
               </div>
               <p className="mt-2 text-[11px] text-slate-500 leading-relaxed">
                 Tempelkan URL Web App yang Anda dapatkan setelah melakukan <b>Deploy</b> pada Apps Script di Google Sheet Anda.
               </p>
             </div>
 
+            {/* SYNC VERIFICATION DIAGNOSTIC PANEL */}
+            <div className="pt-4 border-t border-slate-200 dark:border-slate-700 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h3 className="font-extrabold text-sm text-slate-900 dark:text-white flex items-center gap-2">
+                    <Server className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                    <span>Diagnostik Verifikasi Sinkronisasi (App State vs Google Sheets API)</span>
+                  </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    Mengambil JSON mentah dari Google Sheets API secara langsung dan membandingkannya dengan state aplikasi saat ini.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={handleForcePushLocalToSheets}
+                    disabled={syncingSheets || isVerifyingSync}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-all cursor-pointer disabled:opacity-50"
+                    title="Kirim paksa pengaturan DANA, WA, dan Produk dari aplikasi ke Google Sheets"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Push App → Sheets</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleManualSheetsSync}
+                    disabled={syncingSheets || isVerifyingSync}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-xl transition-all border border-slate-300 dark:border-slate-600 cursor-pointer disabled:opacity-50"
+                    title="Tarik paksa data dari Google Sheets ke aplikasi"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Pull Sheets → App</span>
+                  </button>
+                </div>
+              </div>
+
+              {sheetsSyncResult && (
+                <div
+                  className={`p-3 rounded-xl border text-xs font-semibold flex items-center gap-2 ${
+                    sheetsSyncResult.success
+                      ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                      : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+                  }`}
+                >
+                  {sheetsSyncResult.success ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  ) : (
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  )}
+                  <span>{sheetsSyncResult.message}</span>
+                </div>
+              )}
+
+              {syncDiagReport ? (
+                <div className="space-y-3">
+                  {/* Overall Banner */}
+                  <div
+                    className={`p-3.5 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
+                      syncDiagReport.error
+                        ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-300 dark:border-rose-800 text-rose-800 dark:text-rose-200'
+                        : syncDiagReport.allMatched
+                        ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
+                        : 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200'
+                    }`}
+                  >
+                    <div className="flex items-start sm:items-center gap-2 text-xs font-bold">
+                      {syncDiagReport.error ? (
+                        <AlertOctagon className="w-4 h-4 text-rose-600 shrink-0 mt-0.5 sm:mt-0" />
+                      ) : syncDiagReport.allMatched ? (
+                        <BadgeCheck className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5 sm:mt-0" />
+                      ) : (
+                        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5 sm:mt-0" />
+                      )}
+                      <div>
+                        {syncDiagReport.error ? (
+                          <span>{syncDiagReport.error}</span>
+                        ) : syncDiagReport.allMatched ? (
+                          <span>100% SINKRON: Seluruh pengaturan DANA, WA, Produk, dan Pesanan di Aplikasi sama persis dengan Google Sheets!</span>
+                        ) : (
+                          <span>
+                            TERDETEKSI PERBEDAAN DATA: Beberapa pengaturan di Aplikasi belum sama dengan Google Sheets.
+                            {!syncDiagReport.hasSettingsSheet &&
+                              ' (Objek "settings" di Google Sheets masih kosong — pastikan Apps Script di-deploy versi terbaru lalu klik "Push App → Sheets").'}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-mono opacity-75 shrink-0">
+                      Dicek: {syncDiagReport.checkedAt}
+                    </span>
+                  </div>
+
+                  {/* Comparison Table */}
+                  {syncDiagReport.fields.length > 0 && (
+                    <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="bg-slate-100 dark:bg-slate-900/90 text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700">
+                            <th className="py-2.5 px-3 font-bold">Parameter Pengaturan</th>
+                            <th className="py-2.5 px-3 font-bold">State Aplikasi (Lokal)</th>
+                            <th className="py-2.5 px-3 font-bold">Google Sheets API (Cloud)</th>
+                            <th className="py-2.5 px-3 font-bold text-center">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200 dark:divide-slate-700/60">
+                          {syncDiagReport.fields.map((field) => (
+                            <tr
+                              key={field.key}
+                              className={
+                                field.matched
+                                  ? 'bg-white dark:bg-slate-800/60'
+                                  : 'bg-amber-50/50 dark:bg-amber-950/20'
+                              }
+                            >
+                              <td className="py-2.5 px-3 font-semibold text-slate-800 dark:text-slate-200">
+                                {field.label}
+                              </td>
+                              <td className="py-2.5 px-3 font-mono text-[11px] text-slate-700 dark:text-slate-300 break-all">
+                                {field.localValue}
+                              </td>
+                              <td className="py-2.5 px-3 font-mono text-[11px] text-slate-700 dark:text-slate-300 break-all">
+                                {field.remoteValue}
+                              </td>
+                              <td className="py-2.5 px-3 text-center">
+                                {field.matched ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold text-[10px]">
+                                    <Check className="w-3 h-3" /> Cocok
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 font-bold text-[10px]">
+                                    <AlertTriangle className="w-3 h-3" /> Berbeda
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {/* Toggle Raw JSON Inspector */}
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setShowRawDiagnosticJson(!showRawDiagnosticJson)}
+                      className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                    >
+                      {showRawDiagnosticJson
+                        ? '▼ Sembunyikan Raw JSON dari Google Sheets API'
+                        : '▶ Tampilkan Raw JSON dari Google Sheets API'}
+                    </button>
+                    {showRawDiagnosticJson && (
+                      <pre className="mt-2 p-3 bg-slate-950 text-emerald-400 rounded-xl text-[10px] font-mono overflow-x-auto max-h-72 border border-slate-800">
+                        {JSON.stringify(syncDiagReport.rawResponse, null, 2)}
+                      </pre>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-dashed border-slate-300 dark:border-slate-700 text-center text-xs text-slate-500">
+                  Klik tombol <b>&quot;Cek &amp; Verifikasi Sinkronisasi&quot;</b> di atas untuk memeriksa apakah Nomor DANA, Nama DANA, dan Tujuan WhatsApp sudah tersimpan di Google Sheets Anda.
+                </div>
+              )}
+            </div>
+
             <div className="pt-4 border-t border-slate-100 dark:border-slate-700/50">
               <h3 className="font-bold text-xs text-slate-800 dark:text-slate-100 mb-3 flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 text-amber-500" />
-                Panduan Setup Cepat
+                Panduan Setup Cepat (Jika Sheet &quot;Settings&quot; Belum Muncul)
               </h3>
               <ol className="text-[11px] text-slate-600 dark:text-slate-400 space-y-2 list-decimal ml-4">
-                <li>Buat Spreadsheet baru di Google Sheets.</li>
-                <li>Buka menu <b>Extensions &gt; Apps Script</b>.</li>
-                <li>Salin kode skrip yang disediakan ke editor skrip.</li>
-                <li>Klik tombol <b>Deploy &gt; New Deployment</b>.</li>
-                <li>Pilih type <b>Web App</b>, set akses ke <b>Anyone</b>.</li>
-                <li>Salin URL Web App dan tempelkan di kolom atas.</li>
+                <li>Buka Google Sheets Anda, lalu klik menu <b>Extensions &gt; Apps Script</b>.</li>
+                <li>Pastikan seluruh kode dari file <code>google-apps-script.gs</code> sudah ditempelkan (terutama fungsi <code>saveSetting</code>).</li>
+                <li>Klik tombol <b>Deploy &gt; Manage deployments &gt; Edit (ikon pensil) &gt; Version: New version &gt; Deploy</b>.</li>
+                <li>Klik tombol <b>Push App → Sheets</b> di atas, lalu klik <b>Cek &amp; Verifikasi Sinkronisasi</b>.</li>
               </ol>
             </div>
           </div>

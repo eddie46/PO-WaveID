@@ -164,17 +164,6 @@ export interface AdminStoreConfig {
   danaAccountName: string;
   autoDeductStock: boolean;
   qrisImageUrl?: string;
-  supabaseConfig?: {
-    supabaseUrl: string;
-    supabaseAnonKey: string;
-    tableName: string;
-    isEnabled: boolean;
-    realtimeProvider?: 'supabase';
-    secondarySupabaseUrl?: string;
-    secondarySupabaseAnonKey?: string;
-    enableAutoFailover?: boolean;
-    activeAccountIndex?: 1 | 2;
-  };
   googleSheetsUrl?: string;
 }
 

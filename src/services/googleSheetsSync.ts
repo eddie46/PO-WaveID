@@ -20,18 +20,28 @@ async function callGsAction(action: string, data?: any) {
   if (!url) return null;
 
   try {
-    // For POST (writing)
+    // For POST (writing) - use text/plain to avoid CORS preflight rejection on Google Apps Script Web Apps
     if (data) {
+      const payload = JSON.stringify({ action, data, ...data });
       const res = await fetch(url, {
         method: 'POST',
-        body: JSON.stringify({ action, data, ...data }), // Flatten if needed
+        headers: {
+          'Content-Type': 'text/plain;charset=utf-8',
+        },
+        redirect: 'follow',
+        body: payload,
       });
-      return await res.json();
+      const text = await res.text();
+      try {
+        return JSON.parse(text);
+      } catch {
+        return { success: res.ok, raw: text };
+      }
     }
     
     // For GET (reading)
     const getUrl = `${url}${url.includes('?') ? '&' : '?'}action=${action}&t=${Date.now()}`;
-    const res = await fetch(getUrl);
+    const res = await fetch(getUrl, { redirect: 'follow' });
     return await res.json();
   } catch (err) {
     console.error(`Google Sheets Action Failed (${action}):`, err);
