@@ -237,21 +237,13 @@ export const simpleStorage = {
   },
 
   getWAConfig(): WAConfig {
+    const data = localStorage.getItem(STORAGE_WA_CONFIG_KEY);
+    if (!data) return DEFAULT_WA_CONFIG;
+    
     try {
-      const data = localStorage.getItem(STORAGE_WA_CONFIG_KEY);
-      if (!data) {
-        localStorage.setItem(STORAGE_WA_CONFIG_KEY, JSON.stringify(DEFAULT_WA_CONFIG));
-        return DEFAULT_WA_CONFIG;
-      }
       const parsed = JSON.parse(data) as WAConfig;
-      // PRIORITIZE STORED DATA: Only merge defaults for missing keys, don't overwrite existing ones with defaults.
-      return {
-        ...DEFAULT_WA_CONFIG,
-        ...parsed,
-        // Ensure critical fields are not lost
-        paidGroupLink: parsed.paidGroupLink || DEFAULT_WA_CONFIG.paidGroupLink,
-        paidGroupName: parsed.paidGroupName || DEFAULT_WA_CONFIG.paidGroupName,
-      };
+      // Merge stored data with defaults only for missing keys to preserve user settings
+      return { ...DEFAULT_WA_CONFIG, ...parsed };
     } catch {
       return DEFAULT_WA_CONFIG;
     }
@@ -266,17 +258,13 @@ export const simpleStorage = {
   },
 
   getAdminConfig(): AdminStoreConfig {
+    const data = localStorage.getItem(STORAGE_ADMIN_CONFIG_KEY);
+    if (!data) return DEFAULT_ADMIN_CONFIG;
+    
     try {
-      const data = localStorage.getItem(STORAGE_ADMIN_CONFIG_KEY);
-      if (!data) {
-        localStorage.setItem(STORAGE_ADMIN_CONFIG_KEY, JSON.stringify(DEFAULT_ADMIN_CONFIG));
-        return DEFAULT_ADMIN_CONFIG;
-      }
       const parsed = JSON.parse(data) as AdminStoreConfig;
-      
-      // PRIORITIZE STORED DATA: Use stored products if they exist (even if empty), otherwise fallback to defaults.
-      // Do NOT overwrite user settings with default admin config.
-      const storedProducts = (parsed && Array.isArray(parsed.products)) ? parsed.products : DEFAULT_ADMIN_CONFIG.products;
+      // Ensure products array is treated as valid data, don't fall back to defaults
+      const storedProducts = Array.isArray(parsed.products) ? parsed.products : DEFAULT_ADMIN_CONFIG.products;
         
       const uniqueProducts: ProductSetting[] = [];
       const seenIds = new Set<string>();
@@ -289,9 +277,9 @@ export const simpleStorage = {
       }
 
       return {
-        ...DEFAULT_ADMIN_CONFIG, // Use defaults only for missing keys
-        ...parsed, // Overwrite with actual user data
-        products: uniqueProducts,
+        ...DEFAULT_ADMIN_CONFIG, // Base defaults
+        ...parsed,               // User settings override defaults
+        products: uniqueProducts // Ensure unique products
       };
     } catch {
       return DEFAULT_ADMIN_CONFIG;
