@@ -44,8 +44,8 @@ export const OrderSuccessModal: React.FC<OrderSuccessModalProps> = ({
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [activeView, setActiveView] = useState<'qris' | 'message'>('qris');
 
-  const DANA_PHONE = danaPhone || '085213174959';
-  const DANA_ACCOUNT_NAME = danaAccountName || 'DANA Admin';
+  const DANA_PHONE = danaPhone || '-';
+  const DANA_ACCOUNT_NAME = danaAccountName || '-';
   const totalAmount =
     order.totalPrice ??
     order.items.reduce((acc, it) => acc + (it.subtotal || (100 * it.quantity)), 0);

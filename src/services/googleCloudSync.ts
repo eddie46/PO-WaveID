@@ -25,6 +25,9 @@ function isSheetsActive(): boolean {
   return !!getGoogleSheetsUrl();
 }
 
+let isSavingSettings = false;
+let lastSavedSettingsAt = 0;
+
 /**
  * Subscribe to all data from Google Sheets
  */
@@ -38,57 +41,96 @@ export function subscribeToOrders(
     
     // 1. Sync Orders (Allow empty array)
     if (data.orders) {
-      console.log('Syncing orders:', data.orders.length);
       simpleStorage.saveOrders(data.orders);
       onData(data.orders);
     }
     
-    // 2. Sync Settings (Global configs)
-    if (data.settings) {
-      console.log('--- SYNC SETTINGS DATA ---');
-      console.log('Incoming settings:', data.settings);
-      
-      if (data.settings.adminConfig && onAdminConfig) {
-        // ONLY update if localStorage is currently empty
-        const currentAdmin = localStorage.getItem('simple_po_admin_config_v2');
-        if (!currentAdmin) {
-            console.log('Local admin config empty, syncing from Sheets.');
-            simpleStorage.saveAdminConfig(data.settings.adminConfig);
-            onAdminConfig(data.settings.adminConfig);
-        } else {
-            console.log('Local admin config exists, skipping overwrite.');
-        }
-      }
-      if (data.settings.waConfig && onWAConfig) {
-        // ONLY update if localStorage is currently empty
-        const currentWA = localStorage.getItem('simple_po_wa_config_v3');
-        if (!currentWA) {
-            console.log('Local WA config empty, syncing from Sheets.');
-            simpleStorage.saveWAConfig(data.settings.waConfig);
-            onWAConfig(data.settings.waConfig);
-        } else {
-            console.log('Local WA config exists, skipping overwrite.');
-        }
-      }
+    // Skip overwriting settings & products if a save is currently in-flight or just completed (< 8s ago)
+    if (isSavingSettings || Date.now() - lastSavedSettingsAt < 8000) {
+      console.log('Skipping settings/products poll update because local save is in-flight or recent.');
+      return;
     }
-    
-    // 3. Sync Products (Allow empty array)
-    if (Array.isArray(data.products) && onAdminConfig) {
-      console.log('Syncing products:', data.products.length);
-      const current = simpleStorage.getAdminConfig();
-      
-      const uniqueProds: ProductSetting[] = [];
-      const seenIds = new Set<string>();
-      for (const p of data.products) {
-        if (p && p.id && !seenIds.has(p.id)) {
-          uniqueProds.push(p);
-          seenIds.add(p.id);
+
+    // 2. Sync Admin Config & Products together in a single atomic pass
+    if (onAdminConfig && (data.settings?.adminConfig || Array.isArray(data.products))) {
+      const currentAdmin = simpleStorage.getAdminConfig();
+      const cloudAdmin = data.settings?.adminConfig;
+
+      // Deduplicate products from Products sheet if non-empty, otherwise fall back to cloudAdmin.products or currentAdmin.products
+      let mergedProducts = currentAdmin.products;
+      if (Array.isArray(data.products) && data.products.length > 0) {
+        const uniqueProds: ProductSetting[] = [];
+        const seenIds = new Set<string>();
+        for (const p of data.products) {
+          if (p && p.id && !seenIds.has(p.id)) {
+            uniqueProds.push(p);
+            seenIds.add(p.id);
+          }
         }
+        mergedProducts = uniqueProds;
+      } else if (Array.isArray(cloudAdmin?.products)) {
+        mergedProducts = cloudAdmin.products;
       }
-      
-      const updatedAdmin = { ...current, products: uniqueProds };
+
+      const updatedAdmin: AdminStoreConfig = {
+        ...currentAdmin,
+        ...(cloudAdmin && typeof cloudAdmin === 'object' ? cloudAdmin : {}),
+        danaPhone:
+          cloudAdmin?.danaPhone !== undefined && cloudAdmin.danaPhone !== ''
+            ? String(cloudAdmin.danaPhone)
+            : currentAdmin.danaPhone || cloudAdmin?.danaPhone || '',
+        danaAccountName:
+          cloudAdmin?.danaAccountName !== undefined && cloudAdmin.danaAccountName !== ''
+            ? String(cloudAdmin.danaAccountName)
+            : currentAdmin.danaAccountName || cloudAdmin?.danaAccountName || '',
+        qrisImageUrl:
+          cloudAdmin?.qrisImageUrl !== undefined && cloudAdmin.qrisImageUrl !== ''
+            ? String(cloudAdmin.qrisImageUrl)
+            : currentAdmin.qrisImageUrl || cloudAdmin?.qrisImageUrl || '',
+        autoDeductStock:
+          cloudAdmin?.autoDeductStock !== undefined
+            ? Boolean(cloudAdmin.autoDeductStock)
+            : currentAdmin.autoDeductStock,
+        products: mergedProducts,
+      };
+
       simpleStorage.saveAdminConfig(updatedAdmin);
       onAdminConfig(updatedAdmin);
+    }
+
+    // 3. Sync WA Config
+    if (data.settings?.waConfig && onWAConfig) {
+      const currentWA = simpleStorage.getWAConfig();
+      const cloudWA = data.settings.waConfig;
+      if (cloudWA && typeof cloudWA === 'object') {
+        const updatedWA: WAConfig = {
+          ...currentWA,
+          ...cloudWA,
+          mode: cloudWA.mode || currentWA.mode || 'group_link',
+          phoneNumber:
+            cloudWA.phoneNumber !== undefined && cloudWA.phoneNumber !== ''
+              ? String(cloudWA.phoneNumber)
+              : currentWA.phoneNumber || cloudWA.phoneNumber || '',
+          groupLink:
+            cloudWA.groupLink !== undefined && cloudWA.groupLink !== ''
+              ? String(cloudWA.groupLink)
+              : currentWA.groupLink || cloudWA.groupLink || '',
+          groupName:
+            cloudWA.groupName !== undefined && cloudWA.groupName !== ''
+              ? String(cloudWA.groupName)
+              : currentWA.groupName || cloudWA.groupName || '',
+          paidGroupLink:
+            cloudWA.paidGroupLink !== undefined && cloudWA.paidGroupLink !== ''
+              ? String(cloudWA.paidGroupLink)
+              : currentWA.paidGroupLink || cloudWA.paidGroupLink || '',
+          paidGroupName:
+            cloudWA.paidGroupName !== undefined && cloudWA.paidGroupName !== ''
+              ? String(cloudWA.paidGroupName)
+              : currentWA.paidGroupName || cloudWA.paidGroupName || '',
+        };
+        simpleStorage.saveWAConfig(updatedWA);
+        onWAConfig(updatedWA);
+      }
     }
   });
 }
@@ -127,14 +169,29 @@ export async function deleteOrderCloud(orderId: string): Promise<void> {
  * Save Admin Store Config
  */
 export async function saveAdminConfigCloud(config: AdminStoreConfig): Promise<AdminStoreConfig> {
+  isSavingSettings = true;
+  lastSavedSettingsAt = Date.now();
   simpleStorage.saveAdminConfig(config);
-  if (isSheetsActive()) {
-    console.log('Sending AdminConfig payload to Sheets:', config);
-    await saveSettingToSheets('adminConfig', config);
-    if (config.products) {
-      console.log('Sending Products payload to Sheets:', config.products);
-      await saveProductsToSheets(config.products);
+  try {
+    if (isSheetsActive()) {
+      console.log('Sending AdminConfig payload to Sheets:', config);
+      // Strip huge base64 qrisImageUrl if it exceeds safe Apps Script cell limit (45,000 chars) so danaPhone/danaAccountName always save to Sheets
+      const safeSheetConfig: AdminStoreConfig = {
+        ...config,
+        qrisImageUrl:
+          config.qrisImageUrl && config.qrisImageUrl.length > 45000
+            ? ''
+            : config.qrisImageUrl,
+      };
+      await saveSettingToSheets('adminConfig', safeSheetConfig);
+      if (config.products) {
+        console.log('Sending Products payload to Sheets:', config.products);
+        await saveProductsToSheets(config.products);
+      }
     }
+  } finally {
+    lastSavedSettingsAt = Date.now();
+    isSavingSettings = false;
   }
   return config;
 }
@@ -143,10 +200,17 @@ export async function saveAdminConfigCloud(config: AdminStoreConfig): Promise<Ad
  * Save WA Config
  */
 export async function saveWAConfigCloud(config: WAConfig): Promise<WAConfig> {
+  isSavingSettings = true;
+  lastSavedSettingsAt = Date.now();
   simpleStorage.saveWAConfig(config);
-  if (isSheetsActive()) {
-    console.log('Sending WAConfig payload to Sheets:', config);
-    await saveSettingToSheets('waConfig', config);
+  try {
+    if (isSheetsActive()) {
+      console.log('Sending WAConfig payload to Sheets:', config);
+      await saveSettingToSheets('waConfig', config);
+    }
+  } finally {
+    lastSavedSettingsAt = Date.now();
+    isSavingSettings = false;
   }
   return config;
 }

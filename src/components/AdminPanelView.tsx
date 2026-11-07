@@ -168,6 +168,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
 }) => {
   const [formData, setFormData] = useState<AdminStoreConfig>(config);
   const [formWA, setFormWA] = useState<WAConfig>(waConfig);
+  const [isDirtySettings, setIsDirtySettings] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [previewQrUrl, setPreviewQrUrl] = useState<string>('');
   const [adminTab, setAdminTab] = useState<'payment' | 'shipping' | 'products' | 'expenses' | 'database' | 'sheets'>('payment');
@@ -426,6 +427,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
       try {
         const compressed = await compressImage(file, 900, 0.8);
         setFormData((prev) => ({ ...prev, qrisImageUrl: compressed }));
+        setIsDirtySettings(true);
         setSavedSuccess(false);
         setQrisUploadMsg('Foto Barcode QRIS berhasil dimuat! Klik "Simpan Semua Pengaturan" di bawah untuk mengaktifkan.');
       } catch (err: any) {
@@ -439,6 +441,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
   const handleRemoveQRISImage = () => {
     if (confirm('Hapus foto Barcode QRIS dari toko?')) {
       setFormData((prev) => ({ ...prev, qrisImageUrl: '' }));
+      setIsDirtySettings(true);
       setSavedSuccess(false);
       setQrisUploadMsg(null);
     }
@@ -507,18 +510,26 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
   }, [orders]);
 
 
-  // Keep form data synced if props change
+  // Keep form data synced if props change, ONLY when user does not have unsaved local edits
   useEffect(() => {
-    setFormData(config);
-  }, [config]);
+    if (!isDirtySettings) {
+      setFormData(config);
+    }
+  }, [config, isDirtySettings]);
 
   useEffect(() => {
-    setFormWA(waConfig);
-  }, [waConfig]);
+    if (!isDirtySettings) {
+      setFormWA(waConfig);
+    }
+  }, [waConfig, isDirtySettings]);
 
   // Generate QR preview for DANA account
   useEffect(() => {
-    const danaPhone = formData.danaPhone || '085213174959';
+    const danaPhone = formData.danaPhone || '';
+    if (!danaPhone) {
+      setPreviewQrUrl('');
+      return;
+    }
     const samplePayload = `https://link.dana.id/qr/${danaPhone}?amount=200&desc=ADMIN_PREVIEW`;
     QRCode.toDataURL(samplePayload, {
       width: 200,
@@ -1191,6 +1202,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
       [field]: value,
     };
     setFormData({ ...formData, products: updated });
+    setIsDirtySettings(true);
     setSavedSuccess(false);
   };
 
@@ -1202,11 +1214,13 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
       stock: Math.max(0, current + delta),
     };
     setFormData({ ...formData, products: updated });
+    setIsDirtySettings(true);
     setSavedSuccess(false);
   };
 
   const handleResetToDefault = () => {
     if (confirm('Kembalikan semua harga, stok barang, dan nomor DANA ke setelan awal pabrik?')) {
+      setIsDirtySettings(false);
       setFormData(DEFAULT_ADMIN_CONFIG);
       onSaveConfig(DEFAULT_ADMIN_CONFIG);
       setSavedSuccess(true);
@@ -1220,6 +1234,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
   };
 
   const handleConfirmExecuteSaveSettings = (shouldNavigateBack = false) => {
+    setIsDirtySettings(false);
     onSaveConfig(formData);
     onSaveWAConfig(formWA);
     setSavedSuccess(true);
@@ -3132,9 +3147,10 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                     value={formData.danaPhone}
                     onChange={(e) => {
                       setFormData({ ...formData, danaPhone: e.target.value });
+                      setIsDirtySettings(true);
                       setSavedSuccess(false);
                     }}
-                    placeholder="085213174959"
+                    placeholder="Masukkan nomor DANA..."
                     className="w-full pl-9 pr-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl font-mono font-bold text-xs focus:ring-2 focus:ring-[#118EEA] focus:outline-none"
                   />
                 </div>
@@ -3152,9 +3168,10 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                   value={formData.danaAccountName}
                   onChange={(e) => {
                     setFormData({ ...formData, danaAccountName: e.target.value });
+                    setIsDirtySettings(true);
                     setSavedSuccess(false);
                   }}
-                  placeholder="DANA Admin"
+                  placeholder="Masukkan nama akun DANA..."
                   className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-[#118EEA] focus:outline-none"
                 />
               </div>
@@ -3175,6 +3192,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                     checked={formData.autoDeductStock}
                     onChange={(e) => {
                       setFormData({ ...formData, autoDeductStock: e.target.checked });
+                      setIsDirtySettings(true);
                       setSavedSuccess(false);
                     }}
                     className="sr-only peer"
@@ -3288,7 +3306,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                 )}
               </div>
               <div className="text-[11px] font-mono font-bold text-slate-700 dark:text-slate-300 mt-2">
-                {formData.danaPhone || '085213174959'}
+                {formData.danaPhone || 'Belum diatur'}
               </div>
               <div className="text-[9px] text-emerald-600 font-medium">
                 Siap di-scan oleh pembeli
@@ -3317,6 +3335,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
               type="button"
               onClick={() => {
                 setFormWA({ ...formWA, mode: 'group_link' });
+                setIsDirtySettings(true);
                 setSavedSuccess(false);
               }}
               className={`p-3 rounded-xl border text-left transition-all ${
@@ -3335,6 +3354,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
               type="button"
               onClick={() => {
                 setFormWA({ ...formWA, mode: 'phone_number' });
+                setIsDirtySettings(true);
                 setSavedSuccess(false);
               }}
               className={`p-3 rounded-xl border text-left transition-all ${
@@ -3362,6 +3382,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                   value={formWA.groupLink}
                   onChange={(e) => {
                     setFormWA({ ...formWA, groupLink: e.target.value });
+                    setIsDirtySettings(true);
                     setSavedSuccess(false);
                   }}
                   placeholder="https://chat.whatsapp.com/GrupPemesananPCB..."
@@ -3379,6 +3400,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                   value={formWA.groupName}
                   onChange={(e) => {
                     setFormWA({ ...formWA, groupName: e.target.value });
+                    setIsDirtySettings(true);
                     setSavedSuccess(false);
                   }}
                   placeholder="Contoh: Grup Order PCB GEN 3 & SOLDER C21"
@@ -3397,6 +3419,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                   value={formWA.phoneNumber}
                   onChange={(e) => {
                     setFormWA({ ...formWA, phoneNumber: e.target.value });
+                    setIsDirtySettings(true);
                     setSavedSuccess(false);
                   }}
                   placeholder="6281234567890 atau 081234567890"
@@ -3421,6 +3444,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                 value={formWA.paidGroupLink || ''}
                 onChange={(e) => {
                   setFormWA({ ...formWA, paidGroupLink: e.target.value });
+                  setIsDirtySettings(true);
                   setSavedSuccess(false);
                 }}
                 placeholder="https://chat.whatsapp.com/GrupPCBUtamaLunas"
@@ -5064,8 +5088,8 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
 
                 <div className="p-3 bg-indigo-50/70 dark:bg-indigo-950/40 rounded-xl border border-indigo-200 dark:border-indigo-900/60 text-xs space-y-1">
                   <div>🛍️ Total Produk Katalog: <strong>{formData.products.length} produk</strong></div>
-                  <div>💳 Nomor Rekening DANA: <strong className="font-mono text-indigo-700 dark:text-indigo-300">{formData.danaPhone || '085213174959'}</strong> ({formData.danaAccountName || 'Edi Purnomo'})</div>
-                  <div>💬 WhatsApp Tujuan: <strong>{formWA.phoneNumber || formWA.groupLink || 'Tersetting'}</strong></div>
+                  <div>💳 Nomor Rekening DANA: <strong className="font-mono text-indigo-700 dark:text-indigo-300">{formData.danaPhone || '-'}</strong> ({formData.danaAccountName || '-'})</div>
+                  <div>💬 WhatsApp Tujuan: <strong>{formWA.phoneNumber || formWA.groupLink || 'Belum diatur'}</strong></div>
                 </div>
               </div>
             </div>

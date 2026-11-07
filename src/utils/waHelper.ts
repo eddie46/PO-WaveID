@@ -1,7 +1,7 @@
 import { SimplePOOrder, WAConfig } from '../types/po';
 
 export function formatSimpleOrderForWA(order: SimplePOOrder, danaPhone?: string): string {
-  const targetDana = danaPhone || '085213174959';
+  const targetDana = danaPhone || '-';
   let dateFormatted = '-';
   try {
     if (order.createdAt) {

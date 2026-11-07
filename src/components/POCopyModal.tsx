@@ -25,7 +25,7 @@ export const POCopyModal: React.FC<POCopyModalProps> = ({
   onClose,
   order,
   onProceedToPayment,
-  danaPhone = '085213174959',
+  danaPhone = '',
 }) => {
   if (!isOpen || !order) return null;
 
