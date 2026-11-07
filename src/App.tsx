@@ -1,4 +1,4 @@
-// Version 1.0.2 - Fixed Product Deletion Persistence
+// Version 1.0.3 - Cache Invalidation and Stability Fixes
 import React, { useState, useEffect, useCallback } from 'react';
 import clsx from 'clsx';
 import { SimplePOForm } from './components/SimplePOForm';
