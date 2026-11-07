@@ -1,4 +1,4 @@
-// Version 1.0.3 - Cache Invalidation and Stability Fixes
+// Version 1.0.3 - Cache Invalidation and Stability Fixes (Git Fix)
 import React, { useState, useEffect, useCallback } from 'react';
 import clsx from 'clsx';
 import { SimplePOForm } from './components/SimplePOForm';

@@ -1,8 +1,8 @@
 import { SimplePOOrder, WAConfig, AdminStoreConfig, ProductSetting, ShippingStatus, OperationalExpense } from '../types/po';
 
 const STORAGE_ORDERS_KEY = 'simple_po_orders_v2';
-const STORAGE_WA_CONFIG_KEY = 'simple_po_wa_config_v2';
-const STORAGE_ADMIN_CONFIG_KEY = 'simple_po_admin_config_v1';
+const STORAGE_WA_CONFIG_KEY = 'simple_po_wa_config_v3';
+const STORAGE_ADMIN_CONFIG_KEY = 'simple_po_admin_config_v2';
 const STORAGE_EXPENSES_KEY = 'simple_po_expenses_v1';
 const STORAGE_CUSTOM_CATEGORIES_KEY = 'custom_expense_categories_v1';
 
@@ -238,19 +238,24 @@ export const simpleStorage = {
 
   getWAConfig(): WAConfig {
     const data = localStorage.getItem(STORAGE_WA_CONFIG_KEY);
-    if (!data) return DEFAULT_WA_CONFIG;
+    if (!data) {
+      console.log('WAConfig not found, returning empty defaults.');
+      return DEFAULT_WA_CONFIG;
+    }
     
     try {
       const parsed = JSON.parse(data) as WAConfig;
-      // Merge stored data with defaults only for missing keys to preserve user settings
+      console.log('WAConfig loaded from storage:', parsed);
       return { ...DEFAULT_WA_CONFIG, ...parsed };
-    } catch {
+    } catch (e) {
+      console.error('Failed to parse WAConfig, returning defaults.', e);
       return DEFAULT_WA_CONFIG;
     }
   },
 
   saveWAConfig(config: WAConfig): void {
     try {
+      console.log('Saving WAConfig:', config);
       localStorage.setItem(STORAGE_WA_CONFIG_KEY, JSON.stringify(config));
     } catch (e) {
       console.error('Failed to save WA config', e);
@@ -259,11 +264,15 @@ export const simpleStorage = {
 
   getAdminConfig(): AdminStoreConfig {
     const data = localStorage.getItem(STORAGE_ADMIN_CONFIG_KEY);
-    if (!data) return DEFAULT_ADMIN_CONFIG;
+    if (!data) {
+      console.log('AdminConfig not found, returning defaults.');
+      return DEFAULT_ADMIN_CONFIG;
+    }
     
     try {
       const parsed = JSON.parse(data) as AdminStoreConfig;
-      // Ensure products array is treated as valid data, don't fall back to defaults
+      console.log('AdminConfig loaded from storage:', parsed);
+      
       const storedProducts = Array.isArray(parsed.products) ? parsed.products : DEFAULT_ADMIN_CONFIG.products;
         
       const uniqueProducts: ProductSetting[] = [];
@@ -277,11 +286,12 @@ export const simpleStorage = {
       }
 
       return {
-        ...DEFAULT_ADMIN_CONFIG, // Base defaults
-        ...parsed,               // User settings override defaults
-        products: uniqueProducts // Ensure unique products
+        ...DEFAULT_ADMIN_CONFIG, 
+        ...parsed,               
+        products: uniqueProducts 
       };
-    } catch {
+    } catch (e) {
+      console.error('Failed to parse AdminConfig, returning defaults.', e);
       return DEFAULT_ADMIN_CONFIG;
     }
   },

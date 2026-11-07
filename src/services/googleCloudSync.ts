@@ -34,29 +34,49 @@ export function subscribeToOrders(
   onWAConfig?: (cfg: WAConfig) => void
 ): () => void {
   return subscribeToSheetsRealtime((data) => {
+    console.log('Realtime sync received data:', data);
+    
     // 1. Sync Orders (Allow empty array)
     if (data.orders) {
+      console.log('Syncing orders:', data.orders.length);
       simpleStorage.saveOrders(data.orders);
       onData(data.orders);
     }
     
     // 2. Sync Settings (Global configs)
     if (data.settings) {
+      console.log('--- SYNC SETTINGS DATA ---');
+      console.log('Incoming settings:', data.settings);
+      
       if (data.settings.adminConfig && onAdminConfig) {
-        simpleStorage.saveAdminConfig(data.settings.adminConfig);
-        onAdminConfig(data.settings.adminConfig);
+        // ONLY update if localStorage is currently empty
+        const currentAdmin = localStorage.getItem('simple_po_admin_config_v2');
+        if (!currentAdmin) {
+            console.log('Local admin config empty, syncing from Sheets.');
+            simpleStorage.saveAdminConfig(data.settings.adminConfig);
+            onAdminConfig(data.settings.adminConfig);
+        } else {
+            console.log('Local admin config exists, skipping overwrite.');
+        }
       }
       if (data.settings.waConfig && onWAConfig) {
-        simpleStorage.saveWAConfig(data.settings.waConfig);
-        onWAConfig(data.settings.waConfig);
+        // ONLY update if localStorage is currently empty
+        const currentWA = localStorage.getItem('simple_po_wa_config_v3');
+        if (!currentWA) {
+            console.log('Local WA config empty, syncing from Sheets.');
+            simpleStorage.saveWAConfig(data.settings.waConfig);
+            onWAConfig(data.settings.waConfig);
+        } else {
+            console.log('Local WA config exists, skipping overwrite.');
+        }
       }
     }
     
     // 3. Sync Products (Allow empty array)
     if (Array.isArray(data.products) && onAdminConfig) {
+      console.log('Syncing products:', data.products.length);
       const current = simpleStorage.getAdminConfig();
       
-      // Ensure products from Sheets are unique by ID
       const uniqueProds: ProductSetting[] = [];
       const seenIds = new Set<string>();
       for (const p of data.products) {
@@ -109,9 +129,11 @@ export async function deleteOrderCloud(orderId: string): Promise<void> {
 export async function saveAdminConfigCloud(config: AdminStoreConfig): Promise<AdminStoreConfig> {
   simpleStorage.saveAdminConfig(config);
   if (isSheetsActive()) {
-    saveSettingToSheets('adminConfig', config);
+    console.log('Sending AdminConfig payload to Sheets:', config);
+    await saveSettingToSheets('adminConfig', config);
     if (config.products) {
-      saveProductsToSheets(config.products);
+      console.log('Sending Products payload to Sheets:', config.products);
+      await saveProductsToSheets(config.products);
     }
   }
   return config;
@@ -123,7 +145,8 @@ export async function saveAdminConfigCloud(config: AdminStoreConfig): Promise<Ad
 export async function saveWAConfigCloud(config: WAConfig): Promise<WAConfig> {
   simpleStorage.saveWAConfig(config);
   if (isSheetsActive()) {
-    saveSettingToSheets('waConfig', config);
+    console.log('Sending WAConfig payload to Sheets:', config);
+    await saveSettingToSheets('waConfig', config);
   }
   return config;
 }
