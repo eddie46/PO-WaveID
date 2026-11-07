@@ -85,19 +85,19 @@ export const DEFAULT_ADMIN_CONFIG: AdminStoreConfig = {
       description: 'Modul PCB solder C21 only',
     },
   ],
-  danaPhone: '085213174959',
-  danaAccountName: 'DANA Admin',
+  danaPhone: '',
+  danaAccountName: '',
   autoDeductStock: true,
   qrisImageUrl: '',
 };
 
 export const DEFAULT_WA_CONFIG: WAConfig = {
   mode: 'group_link',
-  groupLink: 'https://chat.whatsapp.com/GrupPemesananPCB',
-  phoneNumber: '6281234567890',
-  groupName: 'Grup Order & Pengadaan PCB',
-  paidGroupLink: 'https://chat.whatsapp.com/GrupPCBUtamaLunas',
-  paidGroupName: 'Grup Pembeli LUNAS & Resi',
+  groupLink: '',
+  phoneNumber: '',
+  groupName: '',
+  paidGroupLink: '',
+  paidGroupName: '',
 };
 
 export const INITIAL_SIMPLE_ORDERS: SimplePOOrder[] = [
