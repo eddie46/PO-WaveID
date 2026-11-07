@@ -106,6 +106,7 @@ interface AdminPanelViewProps {
   onDeleteOrder?: (id: string, shouldResequence?: boolean) => void;
   onClearAllOrders?: () => void;
   onOrdersImported?: (orders: SimplePOOrder[]) => void;
+  isSynced: boolean;
 }
 
 const COURIER_OPTIONS = [
@@ -163,6 +164,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
   onDeleteOrder,
   onClearAllOrders,
   onOrdersImported,
+  isSynced,
 }) => {
   const [formData, setFormData] = useState<AdminStoreConfig>(config);
   const [formWA, setFormWA] = useState<WAConfig>(waConfig);
@@ -3458,7 +3460,8 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
 
             <button
               type="submit"
-              className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-bold text-white rounded-xl transition-all cursor-pointer btn-gradient"
+              disabled={!isSynced}
+              className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-bold text-white rounded-xl transition-all cursor-pointer btn-gradient ${!isSynced ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               <Save className="w-4 h-4 text-white" />
               <span>Simpan Pengaturan</span>
@@ -3466,8 +3469,9 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
 
             <button
               type="button"
+              disabled={!isSynced}
               onClick={() => setConfirmSaveSettings(true)}
-              className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-5 py-2.5 text-xs font-extrabold text-white rounded-xl transition-all shadow-md active:scale-95 cursor-pointer btn-gradient"
+              className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-5 py-2.5 text-xs font-extrabold text-white rounded-xl transition-all shadow-md active:scale-95 cursor-pointer btn-gradient ${!isSynced ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               <ArrowLeft className="w-4 h-4" />
               <span>Simpan &amp; Kembali</span>

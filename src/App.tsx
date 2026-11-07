@@ -418,6 +418,7 @@ export default function App() {
                 setOrders(importedOrders);
                 showNotification(`Database berhasil diimpor (${importedOrders.length} pesanan aktif)!`);
               }}
+              isSynced={!isAppLoading}
             />
           </div>
         )}
