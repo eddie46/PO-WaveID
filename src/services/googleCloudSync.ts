@@ -34,23 +34,26 @@ export function subscribeToOrders(
   onWAConfig?: (cfg: WAConfig) => void
 ): () => void {
   return subscribeToSheetsRealtime((data) => {
-    if (data.orders && data.orders.length > 0) {
+    // 1. Sync Orders (Allow empty array)
+    if (data.orders) {
       simpleStorage.saveOrders(data.orders);
       onData(data.orders);
     }
     
-    // Sync settings back to local
+    // 2. Sync Settings (Global configs)
     if (data.settings) {
       if (data.settings.adminConfig && onAdminConfig) {
+        simpleStorage.saveAdminConfig(data.settings.adminConfig);
         onAdminConfig(data.settings.adminConfig);
       }
       if (data.settings.waConfig && onWAConfig) {
+        simpleStorage.saveWAConfig(data.settings.waConfig);
         onWAConfig(data.settings.waConfig);
       }
     }
     
-    // Products are part of adminConfig in this app's architecture
-    if (data.products && data.products.length > 0 && onAdminConfig) {
+    // 3. Sync Products (Allow empty array)
+    if (Array.isArray(data.products) && onAdminConfig) {
       const current = simpleStorage.getAdminConfig();
       
       // Ensure products from Sheets are unique by ID
@@ -63,7 +66,9 @@ export function subscribeToOrders(
         }
       }
       
-      onAdminConfig({ ...current, products: uniqueProds });
+      const updatedAdmin = { ...current, products: uniqueProds };
+      simpleStorage.saveAdminConfig(updatedAdmin);
+      onAdminConfig(updatedAdmin);
     }
   });
 }

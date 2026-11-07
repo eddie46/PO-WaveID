@@ -1,5 +1,6 @@
-// Version 1.0.1 - Latest Stable Build
-import React, { useState, useEffect } from 'react';
+// Version 1.0.2 - Fixed Product Deletion Persistence
+import React, { useState, useEffect, useCallback } from 'react';
+import clsx from 'clsx';
 import { SimplePOForm } from './components/SimplePOForm';
 import { SimpleOrderHistory } from './components/SimpleOrderHistory';
 import { AdminPanelView } from './components/AdminPanelView';

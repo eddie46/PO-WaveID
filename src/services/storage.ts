@@ -244,9 +244,11 @@ export const simpleStorage = {
         return DEFAULT_WA_CONFIG;
       }
       const parsed = JSON.parse(data) as WAConfig;
+      // PRIORITIZE STORED DATA: Only merge defaults for missing keys, don't overwrite existing ones with defaults.
       return {
         ...DEFAULT_WA_CONFIG,
         ...parsed,
+        // Ensure critical fields are not lost
         paidGroupLink: parsed.paidGroupLink || DEFAULT_WA_CONFIG.paidGroupLink,
         paidGroupName: parsed.paidGroupName || DEFAULT_WA_CONFIG.paidGroupName,
       };
@@ -272,15 +274,14 @@ export const simpleStorage = {
       }
       const parsed = JSON.parse(data) as AdminStoreConfig;
       
-      // Merge with defaults and ensure products are deduplicated
-      const mergedProducts = (parsed.products && parsed.products.length > 0)
-        ? parsed.products
-        : DEFAULT_ADMIN_CONFIG.products;
+      // PRIORITIZE STORED DATA: Use stored products if they exist (even if empty), otherwise fallback to defaults.
+      // Do NOT overwrite user settings with default admin config.
+      const storedProducts = (parsed && Array.isArray(parsed.products)) ? parsed.products : DEFAULT_ADMIN_CONFIG.products;
         
       const uniqueProducts: ProductSetting[] = [];
       const seenIds = new Set<string>();
       
-      for (const p of mergedProducts) {
+      for (const p of storedProducts) {
         if (p && p.id && !seenIds.has(p.id)) {
           uniqueProducts.push(p);
           seenIds.add(p.id);
@@ -288,8 +289,8 @@ export const simpleStorage = {
       }
 
       return {
-        ...DEFAULT_ADMIN_CONFIG,
-        ...parsed,
+        ...DEFAULT_ADMIN_CONFIG, // Use defaults only for missing keys
+        ...parsed, // Overwrite with actual user data
         products: uniqueProducts,
       };
     } catch {
