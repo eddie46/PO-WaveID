@@ -7,8 +7,8 @@ export function getGoogleSheetsUrl(): string {
   const stored = localStorage.getItem(STORAGE_KEY_GS_URL);
   if (stored) return stored;
   
-  // No default URL. If missing, app must not sync or show an error.
-  return '';
+  // URL restored for convenience, but be aware this is now public.
+  return 'https://script.google.com/macros/s/AKfycbxRyxJXcjvYGrKayHTQfx9sl8WvacVNCyKRyO5HMlFG1WO_SXSBbuRW6RMqFm_fjuwE/exec';
 }
 
 export function saveGoogleSheetsUrl(url: string): void {
