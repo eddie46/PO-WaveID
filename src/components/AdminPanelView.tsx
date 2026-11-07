@@ -424,72 +424,88 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
         return;
       }
 
-      const remoteAdmin = raw.settings?.adminConfig || {};
-      const remoteWA = raw.settings?.waConfig || {};
+      const remoteAdmin = raw.danaConfig || raw.settings?.adminConfig || {};
+      const remoteWA = raw.waConfig || raw.settings?.waConfig || {};
       const remoteProductsCount = Array.isArray(raw.products) ? raw.products.length : 0;
       const remoteOrdersCount = Array.isArray(raw.orders) ? raw.orders.length : 0;
       const remoteExpensesCount = Array.isArray(raw.expenses) ? raw.expenses.length : 0;
 
-      const hasSettingsSheet = Boolean(raw.settings && (raw.settings.adminConfig || raw.settings.waConfig));
+      const hasSettingsSheet = Boolean(
+        raw.danaConfig ||
+        raw.waConfig ||
+        (raw.settings && (raw.settings.adminConfig || raw.settings.waConfig))
+      );
+
+      const cleanLocalDanaPhone = String(formData.danaPhone || '').replace(/^'+/, '');
+      const cleanRemoteDanaPhone =
+        remoteAdmin.danaPhone !== undefined
+          ? String(remoteAdmin.danaPhone || '').replace(/^'+/, '')
+          : undefined;
+
+      const cleanLocalWAPhone = String(formWA.phoneNumber || '').replace(/^'+/, '');
+      const cleanRemoteWAPhone =
+        remoteWA.phoneNumber !== undefined
+          ? String(remoteWA.phoneNumber || '').replace(/^'+/, '')
+          : undefined;
 
       const fields = [
         {
           key: 'danaPhone',
-          label: 'Nomor Akun DANA',
-          localValue: String(formData.danaPhone || '(Kosong)'),
+          label: 'Tabel DanaConfig: Nomor Akun DANA',
+          localValue: String(cleanLocalDanaPhone || '(Kosong)'),
           remoteValue:
-            remoteAdmin.danaPhone !== undefined
-              ? String(remoteAdmin.danaPhone || '(Kosong)')
-              : '(Belum ada di Sheet Settings)',
-          matched: String(formData.danaPhone || '') === String(remoteAdmin.danaPhone || ''),
+            cleanRemoteDanaPhone !== undefined
+              ? String(cleanRemoteDanaPhone || '(Kosong)')
+              : '(Belum ada di Tabel DanaConfig)',
+          matched: cleanLocalDanaPhone === String(cleanRemoteDanaPhone || ''),
         },
         {
           key: 'danaAccountName',
-          label: 'Nama Pemilik DANA',
+          label: 'Tabel DanaConfig: Nama Pemilik DANA',
           localValue: String(formData.danaAccountName || '(Kosong)'),
           remoteValue:
             remoteAdmin.danaAccountName !== undefined
               ? String(remoteAdmin.danaAccountName || '(Kosong)')
-              : '(Belum ada di Sheet Settings)',
+              : '(Belum ada di Tabel DanaConfig)',
           matched: String(formData.danaAccountName || '') === String(remoteAdmin.danaAccountName || ''),
         },
         {
           key: 'waMode',
-          label: 'Mode Tujuan WhatsApp',
+          label: 'Tabel WhatsAppConfig: Mode Tujuan WA',
           localValue: String(formWA.mode || 'group_link'),
-          remoteValue: String(remoteWA.mode || '(Belum ada di Sheet Settings)'),
+          remoteValue: String(remoteWA.mode || '(Belum ada di Tabel WhatsAppConfig)'),
           matched: String(formWA.mode || '') === String(remoteWA.mode || ''),
         },
         {
           key: 'waTarget',
-          label: 'Nomor WA / Link Grup WA',
+          label: 'Tabel WhatsAppConfig: Nomor WA / Link Grup',
           localValue: String(
-            (formWA.mode === 'phone_number' ? formWA.phoneNumber : formWA.groupLink) || '(Kosong)'
+            (formWA.mode === 'phone_number' ? cleanLocalWAPhone : formWA.groupLink) || '(Kosong)'
           ),
           remoteValue:
             remoteWA.mode !== undefined
               ? String(
-                  (remoteWA.mode === 'phone_number' ? remoteWA.phoneNumber : remoteWA.groupLink) ||
+                  (remoteWA.mode === 'phone_number' ? cleanRemoteWAPhone : remoteWA.groupLink) ||
                     '(Kosong)'
                 )
-              : '(Belum ada di Sheet Settings)',
+              : '(Belum ada di Tabel WhatsAppConfig)',
           matched:
-            String(formWA.phoneNumber || '') === String(remoteWA.phoneNumber || '') &&
+            cleanLocalWAPhone === String(cleanRemoteWAPhone || '') &&
             String(formWA.groupLink || '') === String(remoteWA.groupLink || ''),
         },
         {
           key: 'paidGroupLink',
-          label: 'Link Grup WA Lunas',
+          label: 'Tabel WhatsAppConfig: Link Grup WA Lunas',
           localValue: String(formWA.paidGroupLink || '(Kosong)'),
           remoteValue:
             remoteWA.paidGroupLink !== undefined
               ? String(remoteWA.paidGroupLink || '(Kosong)')
-              : '(Belum ada di Sheet Settings)',
+              : '(Belum ada di Tabel WhatsAppConfig)',
           matched: String(formWA.paidGroupLink || '') === String(remoteWA.paidGroupLink || ''),
         },
         {
           key: 'productsCount',
-          label: 'Jumlah Produk Katalog',
+          label: 'Tabel Products: Harga & Stok Katalog',
           localValue: `${formData.products.length} produk (${formData.products.map((p) => p.name).join(', ') || '-'})`,
           remoteValue: `${remoteProductsCount} produk (${Array.isArray(raw.products) ? raw.products.map((p: any) => p.name).join(', ') || '-' : '-'})`,
           matched:
@@ -506,14 +522,14 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
         },
         {
           key: 'ordersCount',
-          label: 'Total Pesanan (PO)',
+          label: 'Tabel Orders: Total Pesanan (PO)',
           localValue: `${orders.length} pesanan`,
           remoteValue: `${remoteOrdersCount} pesanan`,
           matched: orders.length === remoteOrdersCount,
         },
         {
           key: 'expensesCount',
-          label: 'Total Biaya Operasional',
+          label: 'Tabel Expenses: Total Biaya Operasional',
           localValue: `${expenses.length} transaksi`,
           remoteValue: `${remoteExpensesCount} transaksi`,
           matched: expenses.length === remoteExpensesCount,
@@ -554,7 +570,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
       onSaveWAConfig(formWA);
       setSheetsSyncResult({
         success: true,
-        message: 'Berhasil mendorong (Push) pengaturan DANA, WA, dan Produk dari aplikasi ke Google Sheets!',
+        message: 'Berhasil mendorong (Push) data ke 3 tabel terpisah di Google Sheets: Products, DanaConfig, dan WhatsAppConfig!',
       });
       await handleRunSyncVerification();
     } catch (err: any) {
@@ -581,10 +597,15 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
           simpleStorage.saveExpenses(data.expenses);
           setExpenses(data.expenses);
         }
-        if (data.settings?.adminConfig || Array.isArray(data.products)) {
+        const incomingDana = data.danaConfig || data.settings?.adminConfig;
+        if (incomingDana || Array.isArray(data.products)) {
           const mergedAdmin: AdminStoreConfig = {
             ...formData,
-            ...(data.settings?.adminConfig || {}),
+            ...(incomingDana || {}),
+            danaPhone:
+              incomingDana?.danaPhone !== undefined
+                ? String(incomingDana.danaPhone).replace(/^'+/, '')
+                : formData.danaPhone,
             products: Array.isArray(data.products) && data.products.length > 0 ? data.products : formData.products,
           };
           setIsDirtySettings(false);
@@ -592,17 +613,22 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
           simpleStorage.saveAdminConfig(mergedAdmin);
           onSaveConfig(mergedAdmin);
         }
-        if (data.settings?.waConfig) {
+        const incomingWA = data.waConfig || data.settings?.waConfig;
+        if (incomingWA) {
           const mergedWA: WAConfig = {
             ...formWA,
-            ...data.settings.waConfig,
+            ...incomingWA,
+            phoneNumber:
+              incomingWA.phoneNumber !== undefined
+                ? String(incomingWA.phoneNumber).replace(/^'+/, '')
+                : formWA.phoneNumber,
           };
           setIsDirtySettings(false);
           setFormWA(mergedWA);
           simpleStorage.saveWAConfig(mergedWA);
           onSaveWAConfig(mergedWA);
         }
-        setSheetsSyncResult({ success: true, message: 'Berhasil menarik (Pull) seluruh data dari Google Sheets ke aplikasi!' });
+        setSheetsSyncResult({ success: true, message: 'Berhasil menarik (Pull) seluruh data dari tabel Products, DanaConfig, dan WhatsAppConfig!' });
         await handleRunSyncVerification();
       } else {
         setSheetsSyncResult({ success: false, message: 'Gagal mengambil data. Periksa URL Apps Script Anda.' });

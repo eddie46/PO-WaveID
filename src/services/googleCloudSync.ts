@@ -8,6 +8,8 @@ import {
   upsertExpenseToSheets,
   deleteExpenseFromSheets,
   saveProductsToSheets,
+  saveDanaConfigToSheets,
+  saveWAConfigToSheets,
   saveSettingToSheets,
   saveAllOrdersToSheets,
   saveAllExpensesToSheets,
@@ -51,12 +53,11 @@ export function subscribeToOrders(
       return;
     }
 
-    // 2. Sync Admin Config & Products together in a single atomic pass
-    if (onAdminConfig && (data.settings?.adminConfig || Array.isArray(data.products))) {
+    // 2. Sync Admin Config (from DanaConfig table or Settings fallback) & Products (from Products table)
+    const cloudAdmin = data.danaConfig || data.settings?.adminConfig;
+    if (onAdminConfig && (cloudAdmin || Array.isArray(data.products))) {
       const currentAdmin = simpleStorage.getAdminConfig();
-      const cloudAdmin = data.settings?.adminConfig;
 
-      // Deduplicate products from Products sheet if non-empty, otherwise fall back to cloudAdmin.products or currentAdmin.products
       let mergedProducts = currentAdmin.products;
       if (Array.isArray(data.products) && data.products.length > 0) {
         const uniqueProds: ProductSetting[] = [];
@@ -68,8 +69,8 @@ export function subscribeToOrders(
           }
         }
         mergedProducts = uniqueProds;
-      } else if (Array.isArray(cloudAdmin?.products)) {
-        mergedProducts = cloudAdmin.products;
+      } else if (Array.isArray((cloudAdmin as any)?.products)) {
+        mergedProducts = (cloudAdmin as any).products;
       }
 
       const updatedAdmin: AdminStoreConfig = {
@@ -77,7 +78,7 @@ export function subscribeToOrders(
         ...(cloudAdmin && typeof cloudAdmin === 'object' ? cloudAdmin : {}),
         danaPhone:
           cloudAdmin?.danaPhone !== undefined && cloudAdmin.danaPhone !== ''
-            ? String(cloudAdmin.danaPhone)
+            ? String(cloudAdmin.danaPhone).replace(/^'+/, '')
             : currentAdmin.danaPhone || cloudAdmin?.danaPhone || '',
         danaAccountName:
           cloudAdmin?.danaAccountName !== undefined && cloudAdmin.danaAccountName !== ''
@@ -98,39 +99,37 @@ export function subscribeToOrders(
       onAdminConfig(updatedAdmin);
     }
 
-    // 3. Sync WA Config
-    if (data.settings?.waConfig && onWAConfig) {
+    // 3. Sync WA Config (from WhatsAppConfig table or Settings fallback)
+    const cloudWA = data.waConfig || data.settings?.waConfig;
+    if (cloudWA && onWAConfig && typeof cloudWA === 'object') {
       const currentWA = simpleStorage.getWAConfig();
-      const cloudWA = data.settings.waConfig;
-      if (cloudWA && typeof cloudWA === 'object') {
-        const updatedWA: WAConfig = {
-          ...currentWA,
-          ...cloudWA,
-          mode: cloudWA.mode || currentWA.mode || 'group_link',
-          phoneNumber:
-            cloudWA.phoneNumber !== undefined && cloudWA.phoneNumber !== ''
-              ? String(cloudWA.phoneNumber)
-              : currentWA.phoneNumber || cloudWA.phoneNumber || '',
-          groupLink:
-            cloudWA.groupLink !== undefined && cloudWA.groupLink !== ''
-              ? String(cloudWA.groupLink)
-              : currentWA.groupLink || cloudWA.groupLink || '',
-          groupName:
-            cloudWA.groupName !== undefined && cloudWA.groupName !== ''
-              ? String(cloudWA.groupName)
-              : currentWA.groupName || cloudWA.groupName || '',
-          paidGroupLink:
-            cloudWA.paidGroupLink !== undefined && cloudWA.paidGroupLink !== ''
-              ? String(cloudWA.paidGroupLink)
-              : currentWA.paidGroupLink || cloudWA.paidGroupLink || '',
-          paidGroupName:
-            cloudWA.paidGroupName !== undefined && cloudWA.paidGroupName !== ''
-              ? String(cloudWA.paidGroupName)
-              : currentWA.paidGroupName || cloudWA.paidGroupName || '',
-        };
-        simpleStorage.saveWAConfig(updatedWA);
-        onWAConfig(updatedWA);
-      }
+      const updatedWA: WAConfig = {
+        ...currentWA,
+        ...cloudWA,
+        mode: cloudWA.mode || currentWA.mode || 'group_link',
+        phoneNumber:
+          cloudWA.phoneNumber !== undefined && cloudWA.phoneNumber !== ''
+            ? String(cloudWA.phoneNumber).replace(/^'+/, '')
+            : currentWA.phoneNumber || cloudWA.phoneNumber || '',
+        groupLink:
+          cloudWA.groupLink !== undefined && cloudWA.groupLink !== ''
+            ? String(cloudWA.groupLink)
+            : currentWA.groupLink || cloudWA.groupLink || '',
+        groupName:
+          cloudWA.groupName !== undefined && cloudWA.groupName !== ''
+            ? String(cloudWA.groupName)
+            : currentWA.groupName || cloudWA.groupName || '',
+        paidGroupLink:
+          cloudWA.paidGroupLink !== undefined && cloudWA.paidGroupLink !== ''
+            ? String(cloudWA.paidGroupLink)
+            : currentWA.paidGroupLink || cloudWA.paidGroupLink || '',
+        paidGroupName:
+          cloudWA.paidGroupName !== undefined && cloudWA.paidGroupName !== ''
+            ? String(cloudWA.paidGroupName)
+            : currentWA.paidGroupName || cloudWA.paidGroupName || '',
+      };
+      simpleStorage.saveWAConfig(updatedWA);
+      onWAConfig(updatedWA);
     }
   });
 }
@@ -166,7 +165,7 @@ export async function deleteOrderCloud(orderId: string): Promise<void> {
 }
 
 /**
- * Save Admin Store Config
+ * Save Admin Store Config (saves to DanaConfig table, Products table, and Settings fallback)
  */
 export async function saveAdminConfigCloud(config: AdminStoreConfig): Promise<AdminStoreConfig> {
   isSavingSettings = true;
@@ -174,8 +173,7 @@ export async function saveAdminConfigCloud(config: AdminStoreConfig): Promise<Ad
   simpleStorage.saveAdminConfig(config);
   try {
     if (isSheetsActive()) {
-      console.log('Sending AdminConfig payload to Sheets:', config);
-      // Strip huge base64 qrisImageUrl if it exceeds safe Apps Script cell limit (45,000 chars) so danaPhone/danaAccountName always save to Sheets
+      console.log('Sending DanaConfig & Products payload to Sheets:', config);
       const safeSheetConfig: AdminStoreConfig = {
         ...config,
         qrisImageUrl:
@@ -183,9 +181,9 @@ export async function saveAdminConfigCloud(config: AdminStoreConfig): Promise<Ad
             ? ''
             : config.qrisImageUrl,
       };
+      await saveDanaConfigToSheets(safeSheetConfig);
       await saveSettingToSheets('adminConfig', safeSheetConfig);
       if (config.products) {
-        console.log('Sending Products payload to Sheets:', config.products);
         await saveProductsToSheets(config.products);
       }
     }
@@ -197,7 +195,7 @@ export async function saveAdminConfigCloud(config: AdminStoreConfig): Promise<Ad
 }
 
 /**
- * Save WA Config
+ * Save WA Config (saves to WhatsAppConfig table and Settings fallback)
  */
 export async function saveWAConfigCloud(config: WAConfig): Promise<WAConfig> {
   isSavingSettings = true;
@@ -205,7 +203,8 @@ export async function saveWAConfigCloud(config: WAConfig): Promise<WAConfig> {
   simpleStorage.saveWAConfig(config);
   try {
     if (isSheetsActive()) {
-      console.log('Sending WAConfig payload to Sheets:', config);
+      console.log('Sending WhatsAppConfig payload to Sheets:', config);
+      await saveWAConfigToSheets(config);
       await saveSettingToSheets('waConfig', config);
     }
   } finally {

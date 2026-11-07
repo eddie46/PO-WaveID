@@ -8,7 +8,7 @@ export function getGoogleSheetsUrl(): string {
   if (stored) return stored;
   
   // URL restored for convenience, but be aware this is now public.
-  return 'https://script.google.com/macros/s/AKfycbxRyxJXcjvYGrKayHTQfx9sl8WvacVNCyKRyO5HMlFG1WO_SXSBbuRW6RMqFm_fjuwE/exec';
+  return 'https://script.google.com/macros/s/AKfycbwEM0vdCVVwr_8-tycUhmQW7QMVDqaZXbFkeCWPgGh6sFxobuYBSOcQlghDVTlp23asXA/exec';
 }
 
 export function saveGoogleSheetsUrl(url: string): void {
@@ -73,6 +73,31 @@ export async function saveProductsToSheets(products: ProductSetting[]) {
   return await callGsAction('saveProducts', { data: products });
 }
 
+export async function saveDanaConfigToSheets(config: AdminStoreConfig) {
+  return await callGsAction('saveDanaConfig', {
+    data: {
+      danaPhone: config.danaPhone || '',
+      danaAccountName: config.danaAccountName || '',
+      autoDeductStock: config.autoDeductStock !== false,
+      qrisImageUrl:
+        config.qrisImageUrl && config.qrisImageUrl.length <= 45000 ? config.qrisImageUrl : '',
+    },
+  });
+}
+
+export async function saveWAConfigToSheets(config: WAConfig) {
+  return await callGsAction('saveWAConfig', {
+    data: {
+      mode: config.mode || 'group_link',
+      phoneNumber: config.phoneNumber || '',
+      groupLink: config.groupLink || '',
+      groupName: config.groupName || '',
+      paidGroupLink: config.paidGroupLink || '',
+      paidGroupName: config.paidGroupName || '',
+    },
+  });
+}
+
 export async function saveSettingToSheets(key: string, value: any) {
   return await callGsAction('saveSetting', { key, value });
 }
@@ -89,7 +114,14 @@ export async function saveAllExpensesToSheets(expenses: OperationalExpense[]) {
  * Real-time polling for Google Sheets (Polite Polling)
  */
 export function subscribeToSheetsRealtime(
-  onData: (data: { orders: SimplePOOrder[]; products: ProductSetting[]; expenses: OperationalExpense[]; settings: any }) => void
+  onData: (data: {
+    orders: SimplePOOrder[];
+    products: ProductSetting[];
+    danaConfig?: Partial<AdminStoreConfig> | null;
+    waConfig?: Partial<WAConfig> | null;
+    expenses: OperationalExpense[];
+    settings: any;
+  }) => void
 ): () => void {
   let isCancelled = false;
   
