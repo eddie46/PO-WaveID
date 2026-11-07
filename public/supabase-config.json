@@ -1,0 +1,11 @@
+{
+  "supabaseUrl": "https://zcudrmvrzflrmeaffmjz.supabase.co",
+  "supabaseAnonKey": "sb_publishable_6ypDQ95oEmYuUghUmJPYOw_P_bgplO8",
+  "tableName": "orders",
+  "isEnabled": true,
+  "realtimeProvider": "supabase",
+  "secondarySupabaseUrl": "https://qeooqwsyibcamsibkrkl.supabase.co",
+  "secondarySupabaseAnonKey": "sb_publishable_3TJC5rkO3niTfPlSVOnToA_4voT1PMI",
+  "enableAutoFailover": true,
+  "activeAccountIndex": 1
+}

@@ -1,0 +1,10 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow public read/write for demo purposes as requested by the app structure
+    // In a production app, you should restrict this to authenticated users
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}
