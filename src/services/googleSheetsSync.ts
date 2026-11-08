@@ -1,6 +1,6 @@
 import { SimplePOOrder, OperationalExpense, ProductSetting, AdminStoreConfig, WAConfig } from '../types/po';
 
-const STORAGE_KEY_GS_URL = 'po_waveid_gs_url_v3';
+const STORAGE_KEY_GS_URL = 'po_waveid_gs_url_v4';
 
 export function getGoogleSheetsUrl(): string {
   if (typeof window === 'undefined') return '';
@@ -42,9 +42,15 @@ async function callGsAction(action: string, data?: any) {
     // For GET (reading)
     const getUrl = `${url}${url.includes('?') ? '&' : '?'}action=${action}&t=${Date.now()}`;
     const res = await fetch(getUrl, { redirect: 'follow' });
-    return await res.json();
+    const text = await res.text();
+    try {
+      return JSON.parse(text);
+    } catch {
+      console.warn(`Google Sheets returned non-JSON for (${action})`);
+      return null;
+    }
   } catch (err) {
-    console.error(`Google Sheets Action Failed (${action}):`, err);
+    console.warn(`Google Sheets Action Failed (${action}):`, err);
     return null;
   }
 }

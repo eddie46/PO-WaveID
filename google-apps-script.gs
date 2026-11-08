@@ -287,46 +287,63 @@ function doPost(e) {
   }
 }
 
-function doGet(e) {
-  setup(); // Ensure all sheets exist before reading
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const action = e.parameter.action;
-  
-  if (action === 'getData') {
-    const data = {
-      orders: [],
-      products: [],
-      danaConfig: null,
-      waConfig: null,
-      expenses: [],
-      settings: {}
-    };
-    
-    // Get Orders
-    const orderSheet = ss.getSheetByName(CONFIG.sheetNameOrders);
-    if (orderSheet) {
-      const rows = orderSheet.getDataRange().getValues();
-      for (let i = 1; i < rows.length; i++) {
-        if (!rows[i][0] && !rows[i][1]) continue;
-        const colId = String(rows[i][0] || `ord-${i}`);
-        const colPo = String(rows[i][1] || '');
-        const colName = String(rows[i][2] || '');
-        const colPhone = String(rows[i][3] || '').replace(/^'+/, '');
-        const colTotal = Number(rows[i][4]);
-        const rawStatusStr = String(rows[i][5] || '').trim().toUpperCase();
-        const isColPaid =
-          rawStatusStr === 'PAID' ||
-          rawStatusStr === 'LUNAS' ||
-          rawStatusStr === 'SUDAH LUNAS' ||
-          rawStatusStr === 'SUDAH BAYAR' ||
-          rawStatusStr === 'TRUE';
+function safeParseJson(str, fallback) {
+  if (!str || typeof str !== 'string') return fallback;
+  try {
+    return JSON.parse(str);
+  } catch (e) {
+    return fallback;
+  }
+}
 
-        try {
-          const raw = rows[i][7] ? JSON.parse(rows[i][7]) : {};
+function doGet(e) {
+  try {
+    setup(); // Ensure all sheets exist before reading
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const action = e && e.parameter ? e.parameter.action : 'getData';
+    
+    if (action === 'getData' || !action) {
+      const data = {
+        orders: [],
+        products: [],
+        danaConfig: null,
+        waConfig: null,
+        expenses: [],
+        settings: {}
+      };
+      
+      // Get Orders
+      const orderSheet = ss.getSheetByName(CONFIG.sheetNameOrders);
+      if (orderSheet) {
+        const rows = orderSheet.getDataRange().getValues();
+        for (let i = 1; i < rows.length; i++) {
+          if (!rows[i][0] && !rows[i][1]) continue;
+          // Skip accidental duplicate header rows in the sheet
+          if (String(rows[i][0]).toLowerCase() === 'id' || String(rows[i][1]).toLowerCase() === 'po_number' || String(rows[i][6]).toLowerCase() === 'items_json') {
+            continue;
+          }
+
+          const colId = String(rows[i][0] || `ord-${i}`);
+          const colPo = String(rows[i][1] || '');
+          const colName = String(rows[i][2] || '');
+          const colPhone = String(rows[i][3] || '').replace(/^'+/, '');
+          const colTotal = Number(rows[i][4]);
+          const rawStatusStr = String(rows[i][5] || '').trim().toUpperCase();
+          const isColPaid =
+            rawStatusStr === 'PAID' ||
+            rawStatusStr === 'LUNAS' ||
+            rawStatusStr === 'SUDAH LUNAS' ||
+            rawStatusStr === 'SUDAH BAYAR' ||
+            rawStatusStr === 'TRUE';
+
+          const raw = safeParseJson(rows[i][7], {});
+          const parsedItems = Array.isArray(raw.items)
+            ? raw.items
+            : safeParseJson(rows[i][6], []);
+
           const rawPaid =
             String(raw.paymentStatus || '').trim().toUpperCase() === 'PAID' ||
             String(raw.paymentStatus || '').trim().toUpperCase() === 'LUNAS';
-          // Column F (payment_status) takes precedence if explicitly edited in Sheets
           const finalStatus = rawStatusStr
             ? (isColPaid ? 'PAID' : 'PENDING')
             : (rawPaid ? 'PAID' : 'PENDING');
@@ -336,115 +353,117 @@ function doGet(e) {
             poNumber: colPo || raw.poNumber,
             customerName: colName || raw.customerName,
             customerPhone: colPhone || String(raw.customerPhone || '').replace(/^'+/, ''),
-            totalPrice: !isNaN(colTotal) && rows[i][4] !== '' ? colTotal : raw.totalPrice,
+            totalPrice: !isNaN(colTotal) && rows[i][4] !== '' ? colTotal : (raw.totalPrice || 0),
             paymentStatus: finalStatus,
-            items: Array.isArray(raw.items) ? raw.items : JSON.parse(rows[i][6] || '[]'),
-            createdAt: raw.createdAt || rows[i][8]
+            items: Array.isArray(parsedItems) ? parsedItems : [],
+            createdAt: raw.createdAt || rows[i][8] || new Date().toISOString()
           }));
-        } catch(e) {
-          data.orders.push({
-            id: colId,
-            poNumber: colPo,
-            customerName: colName,
-            customerPhone: colPhone,
-            totalPrice: !isNaN(colTotal) ? colTotal : 0,
-            paymentStatus: isColPaid ? 'PAID' : 'PENDING',
-            items: JSON.parse(rows[i][6] || '[]'),
+        }
+      }
+      
+      // 1. Get Products (Tabel Pengaturan Harga & Stok Barang Katalog)
+      const prodSheet = ss.getSheetByName(CONFIG.sheetNameProducts);
+      if (prodSheet) {
+        const rows = prodSheet.getDataRange().getValues();
+        for (let i = 1; i < rows.length; i++) {
+          if (!rows[i][0] || String(rows[i][0]).toLowerCase() === 'id') continue;
+          data.products.push({
+            id: String(rows[i][0]),
+            name: String(rows[i][1] || ''),
+            price: Number(rows[i][2]) || 0,
+            stock: Number(rows[i][3]) || 0,
+            maxPerOrder: Number(rows[i][4]) || 1,
+            isActive: rows[i][5] === true || String(rows[i][5]).toUpperCase() === 'TRUE',
+            description: String(rows[i][6] || '')
+          });
+        }
+      }
+
+      // Get Legacy Settings first (fallback)
+      const setSheet = ss.getSheetByName(CONFIG.sheetNameSettings);
+      if (setSheet) {
+        const rows = setSheet.getDataRange().getValues();
+        for (let i = 1; i < rows.length; i++) {
+          if (rows[i][0] && rows[i][1] && String(rows[i][0]).toLowerCase() !== 'key') {
+            const parsed = safeParseJson(rows[i][1], null);
+            if (parsed !== null) {
+              data.settings[rows[i][0]] = parsed;
+            }
+          }
+        }
+      }
+
+      // 2. Get DanaConfig (Tabel Pengaturan Pembayaran DANA & QRIS) - Prioritas Utama
+      const danaSheet = ss.getSheetByName(CONFIG.sheetNameDana);
+      if (danaSheet) {
+        const rows = danaSheet.getDataRange().getValues();
+        for (let i = 1; i < rows.length; i++) {
+          const r = rows[i];
+          if (String(r[0]).toLowerCase() === 'danaphone') continue;
+          data.danaConfig = {
+            danaPhone: String(r[0] ?? '').replace(/^'+/, ''),
+            danaAccountName: String(r[1] ?? ''),
+            autoDeductStock: r[2] === true || String(r[2]).toUpperCase() === 'TRUE',
+            qrisImageUrl: String(r[3] ?? '')
+          };
+          data.settings.adminConfig = Object.assign({}, data.settings.adminConfig || {}, data.danaConfig, {
+            products: data.products
+          });
+          break;
+        }
+      }
+
+      // 3. Get WhatsAppConfig (Tabel Tujuan WhatsApp Penerima Pesanan) - Prioritas Utama
+      const waSheet = ss.getSheetByName(CONFIG.sheetNameWA);
+      if (waSheet) {
+        const rows = waSheet.getDataRange().getValues();
+        for (let i = 1; i < rows.length; i++) {
+          const r = rows[i];
+          if (String(r[0]).toLowerCase() === 'mode') continue;
+          data.waConfig = {
+            mode: String(r[0] || 'group_link'),
+            phoneNumber: String(r[1] ?? '').replace(/^'+/, ''),
+            groupLink: String(r[2] ?? ''),
+            groupName: String(r[3] ?? ''),
+            paidGroupLink: String(r[4] ?? ''),
+            paidGroupName: String(r[5] ?? '')
+          };
+          data.settings.waConfig = data.waConfig;
+          break;
+        }
+      }
+
+      // Get Expenses
+      const expSheet = ss.getSheetByName(CONFIG.sheetNameExpenses);
+      if (expSheet) {
+        const rows = expSheet.getDataRange().getValues();
+        for (let i = 1; i < rows.length; i++) {
+          if (!rows[i][0] || String(rows[i][0]).toLowerCase() === 'id') continue;
+          data.expenses.push({
+            id: rows[i][0],
+            date: rows[i][1],
+            title: rows[i][2],
+            category: rows[i][3],
+            amount: Number(rows[i][4]) || 0,
+            paymentMethod: rows[i][5],
+            recipientOrVendor: rows[i][6],
+            notes: rows[i][7],
             createdAt: rows[i][8]
           });
         }
       }
+
+      return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON);
     }
     
-    // 1. Get Products (Tabel Pengaturan Harga & Stok Barang Katalog)
-    const prodSheet = ss.getSheetByName(CONFIG.sheetNameProducts);
-    if (prodSheet) {
-      const rows = prodSheet.getDataRange().getValues();
-      for (let i = 1; i < rows.length; i++) {
-        if (!rows[i][0]) continue;
-        data.products.push({
-          id: String(rows[i][0]),
-          name: String(rows[i][1] || ''),
-          price: Number(rows[i][2]) || 0,
-          stock: Number(rows[i][3]) || 0,
-          maxPerOrder: Number(rows[i][4]) || 1,
-          isActive: rows[i][5] === true || String(rows[i][5]).toUpperCase() === 'TRUE',
-          description: String(rows[i][6] || '')
-        });
-      }
-    }
-
-    // Get Legacy Settings first (fallback)
-    const setSheet = ss.getSheetByName(CONFIG.sheetNameSettings);
-    if (setSheet) {
-      const rows = setSheet.getDataRange().getValues();
-      for (let i = 1; i < rows.length; i++) {
-        try {
-          if (rows[i][0] && rows[i][1]) {
-            data.settings[rows[i][0]] = JSON.parse(rows[i][1]);
-          }
-        } catch(e) {}
-      }
-    }
-
-    // 2. Get DanaConfig (Tabel Pengaturan Pembayaran DANA & QRIS) - Prioritas Utama
-    const danaSheet = ss.getSheetByName(CONFIG.sheetNameDana);
-    if (danaSheet) {
-      const rows = danaSheet.getDataRange().getValues();
-      if (rows.length > 1) {
-        const r = rows[1];
-        data.danaConfig = {
-          danaPhone: String(r[0] ?? '').replace(/^'+/, ''),
-          danaAccountName: String(r[1] ?? ''),
-          autoDeductStock: r[2] === true || String(r[2]).toUpperCase() === 'TRUE',
-          qrisImageUrl: String(r[3] ?? '')
-        };
-        data.settings.adminConfig = Object.assign({}, data.settings.adminConfig || {}, data.danaConfig, {
-          products: data.products
-        });
-      }
-    }
-
-    // 3. Get WhatsAppConfig (Tabel Tujuan WhatsApp Penerima Pesanan) - Prioritas Utama
-    const waSheet = ss.getSheetByName(CONFIG.sheetNameWA);
-    if (waSheet) {
-      const rows = waSheet.getDataRange().getValues();
-      if (rows.length > 1) {
-        const r = rows[1];
-        data.waConfig = {
-          mode: String(r[0] || 'group_link'),
-          phoneNumber: String(r[1] ?? '').replace(/^'+/, ''),
-          groupLink: String(r[2] ?? ''),
-          groupName: String(r[3] ?? ''),
-          paidGroupLink: String(r[4] ?? ''),
-          paidGroupName: String(r[5] ?? '')
-        };
-        data.settings.waConfig = data.waConfig;
-      }
-    }
-
-    // Get Expenses
-    const expSheet = ss.getSheetByName(CONFIG.sheetNameExpenses);
-    if (expSheet) {
-      const rows = expSheet.getDataRange().getValues();
-      for (let i = 1; i < rows.length; i++) {
-        if (!rows[i][0]) continue;
-        data.expenses.push({
-          id: rows[i][0],
-          date: rows[i][1],
-          title: rows[i][2],
-          category: rows[i][3],
-          amount: rows[i][4],
-          paymentMethod: rows[i][5],
-          recipientOrVendor: rows[i][6],
-          notes: rows[i][7],
-          createdAt: rows[i][8]
-        });
-      }
-    }
-
-    return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON);
+    return ContentService.createTextOutput(JSON.stringify({ success: false, message: 'Invalid action' })).setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({
+      orders: [],
+      products: [],
+      expenses: [],
+      settings: {},
+      error: err.toString()
+    })).setMimeType(ContentService.MimeType.JSON);
   }
-  
-  return ContentService.createTextOutput(JSON.stringify({ success: false, message: 'Invalid action' })).setMimeType(ContentService.MimeType.JSON);
 }
