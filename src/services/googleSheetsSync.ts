@@ -1,6 +1,6 @@
 import { SimplePOOrder, OperationalExpense, ProductSetting, AdminStoreConfig, WAConfig } from '../types/po';
 
-const STORAGE_KEY_GS_URL = 'po_waveid_gs_url_v2';
+const STORAGE_KEY_GS_URL = 'po_waveid_gs_url_v3';
 
 export function getGoogleSheetsUrl(): string {
   if (typeof window === 'undefined') return '';

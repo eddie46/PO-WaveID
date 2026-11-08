@@ -51,6 +51,9 @@ import {
   Tag,
   PieChart,
   Server,
+  ChevronDown,
+  ChevronUp,
+  EyeOff,
 } from 'lucide-react';
 import { openPaidWhatsAppInvite } from '../utils/waHelper';
 import { compressImage } from '../utils/imageHelper';
@@ -174,6 +177,17 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [previewQrUrl, setPreviewQrUrl] = useState<string>('');
   const [adminTab, setAdminTab] = useState<'payment' | 'shipping' | 'products' | 'expenses' | 'database' | 'sheets'>('payment');
+  const [showProductSalesRecap, setShowProductSalesRecap] = useState<boolean>(() => {
+    return localStorage.getItem('hide_product_sales_recap') !== 'true';
+  });
+
+  const toggleProductSalesRecap = () => {
+    setShowProductSalesRecap((prev) => {
+      const next = !prev;
+      localStorage.setItem('hide_product_sales_recap', next ? 'false' : 'true');
+      return next;
+    });
+  };
 
   // Operational Expenses & Dynamic Categories States
   const [expenses, setExpenses] = useState<OperationalExpense[]>(() => simpleStorage.getExpenses());
@@ -1159,6 +1173,105 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
   const paidOrdersCount = orders.filter((o) => o?.paymentStatus === 'PAID').length;
   const pendingOrdersCount = orders.filter((o) => o?.paymentStatus !== 'PAID').length;
 
+  // Rekapitulasi Produk Terjual / Ter-PO (baik dari katalog maupun item historis di pesanan)
+  const productSalesSummary = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        name: string;
+        totalQty: number;
+        paidQty: number;
+        pendingQty: number;
+        orderCount: number;
+        totalRevenue: number;
+        stock?: number;
+        inCatalog: boolean;
+      }
+    >();
+
+    // Seed from active catalog products first so every catalog product is listed
+    formData.products.forEach((p) => {
+      if (!p || !p.name) return;
+      const key = p.name.trim().toUpperCase();
+      map.set(key, {
+        name: p.name.trim(),
+        totalQty: 0,
+        paidQty: 0,
+        pendingQty: 0,
+        orderCount: 0,
+        totalRevenue: 0,
+        stock: p.stock,
+        inCatalog: true,
+      });
+    });
+
+    // Aggregate from all orders
+    orders.forEach((order) => {
+      if (!order || !Array.isArray(order.items)) return;
+      const isPaid = order.paymentStatus === 'PAID';
+      const seenInThisOrder = new Set<string>();
+
+      order.items.forEach((item) => {
+        if (!item || !item.name) return;
+        const rawName = item.name.trim();
+        if (!rawName) return;
+
+        // Match with existing catalog key if substring matches, otherwise use exact upper name
+        let targetKey = rawName.toUpperCase();
+        for (const existingKey of map.keys()) {
+          if (
+            existingKey === targetKey ||
+            existingKey.includes(targetKey) ||
+            targetKey.includes(existingKey)
+          ) {
+            targetKey = existingKey;
+            break;
+          }
+        }
+
+        const qty = Math.max(0, Number(item.quantity) || 0);
+        const unitPrice = Number(item.unitPrice) || 0;
+        const subtotal = Number(item.subtotal) || qty * unitPrice;
+
+        const existing = map.get(targetKey) || {
+          name: rawName,
+          totalQty: 0,
+          paidQty: 0,
+          pendingQty: 0,
+          orderCount: 0,
+          totalRevenue: 0,
+          inCatalog: false,
+        };
+
+        existing.totalQty += qty;
+        if (isPaid) {
+          existing.paidQty += qty;
+        } else {
+          existing.pendingQty += qty;
+        }
+        existing.totalRevenue += subtotal;
+        if (!seenInThisOrder.has(targetKey)) {
+          existing.orderCount += 1;
+          seenInThisOrder.add(targetKey);
+        }
+
+        map.set(targetKey, existing);
+      });
+    });
+
+    const list = Array.from(map.values()).sort((a, b) => b.totalQty - a.totalQty);
+    const grandTotalUnits = list.reduce((sum, item) => sum + item.totalQty, 0);
+    const grandPaidUnits = list.reduce((sum, item) => sum + item.paidQty, 0);
+    const grandPendingUnits = list.reduce((sum, item) => sum + item.pendingQty, 0);
+
+    return {
+      list,
+      grandTotalUnits,
+      grandPaidUnits,
+      grandPendingUnits,
+    };
+  }, [orders, formData.products]);
+
   // Detect duplicate PO numbers across orders
   const duplicatePOInfo = useMemo(() => {
     const counts = new Map<string, number>();
@@ -1739,28 +1852,24 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
           </div>
         </div>
 
-        {/* Dynamic Product Metrics */}
-        {formData.products.slice(0, 1).map((prod) => {
-          const itemSold = orders.reduce((acc, o) => {
-            const item = o.items.find((i) => i.name.toLowerCase().includes(prod.name.toLowerCase()) || prod.name.toLowerCase().includes(i.name.toLowerCase()));
-            return acc + (item ? item.quantity : 0);
-          }, 0);
-
-          return (
-            <div key={prod.id} className="p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700/80 shadow-2xs">
-              <div className="flex items-center justify-between text-slate-400 text-[11px] mb-1">
-                <span className="font-semibold uppercase tracking-wider truncate">Stok {prod.name}</span>
-                <Package className="w-4 h-4 text-indigo-500 shrink-0" />
-              </div>
-              <div className="font-mono font-bold text-base sm:text-lg text-indigo-600 dark:text-indigo-400">
-                {prod.stock} <span className="text-xs font-sans text-slate-500">unit</span>
-              </div>
-              <div className="text-[10px] text-slate-400 mt-1">
-                Terjual: {itemSold} unit
-              </div>
-            </div>
-          );
-        })}
+        {/* Total Unit Produk Ter-PO Quick Metric */}
+        <div
+          onClick={toggleProductSalesRecap}
+          className="p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700/80 shadow-2xs cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-700 transition-all"
+          title="Klik untuk menampilkan / menyembunyikan rincian produk ter-PO"
+        >
+          <div className="flex items-center justify-between text-slate-400 text-[11px] mb-1">
+            <span className="font-semibold uppercase tracking-wider truncate">Total Produk Ter-PO</span>
+            <Package className="w-4 h-4 text-indigo-500 shrink-0" />
+          </div>
+          <div className="font-mono font-bold text-base sm:text-lg text-indigo-600 dark:text-indigo-400">
+            {productSalesSummary.grandTotalUnits} <span className="text-xs font-sans text-slate-500">unit</span>
+          </div>
+          <div className="text-[10px] text-slate-400 mt-1 flex items-center justify-between">
+            <span className="text-emerald-600 dark:text-emerald-400 font-semibold">Lunas: {productSalesSummary.grandPaidUnits}</span>
+            <span className="text-amber-600 dark:text-amber-400 font-semibold">Pending: {productSalesSummary.grandPendingUnits}</span>
+          </div>
+        </div>
 
         {/* Biaya Operasional Quick Metric */}
         <div
@@ -1782,6 +1891,110 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
             </span>
           </div>
         </div>
+      </div>
+
+      {/* Ringkasan Rincian Jumlah + Produk yang Terjual / Ter-PO (Bisa Disembunyikan) */}
+      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/80 p-4 sm:p-5 shadow-2xs space-y-3">
+        <div
+          className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
+            showProductSalesRecap ? 'pb-2.5 border-b border-slate-100 dark:border-slate-700/70' : ''
+          }`}
+        >
+          <div
+            onClick={toggleProductSalesRecap}
+            className="flex items-center gap-2 cursor-pointer select-none"
+          >
+            <Boxes className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+            <h2 className="text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white">
+              Rekapitulasi Jumlah &amp; Produk yang Terjual / Ter-PO
+            </h2>
+          </div>
+
+          <div className="flex items-center justify-between sm:justify-end gap-2 text-[11px] font-semibold flex-wrap">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="px-2.5 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                Total Ter-PO: <strong className="font-mono">{productSalesSummary.grandTotalUnits} unit</strong>
+              </span>
+              <span className="px-2.5 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                Sudah Lunas: <strong className="font-mono">{productSalesSummary.grandPaidUnits} unit</strong>
+              </span>
+              <span className="px-2.5 py-0.5 rounded-lg bg-amber-50 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                Belum Lunas: <strong className="font-mono">{productSalesSummary.grandPendingUnits} unit</strong>
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={toggleProductSalesRecap}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-700/80 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 transition-colors cursor-pointer text-[11px] font-bold shrink-0"
+              title={showProductSalesRecap ? 'Sembunyikan rincian produk' : 'Tampilkan rincian produk'}
+            >
+              {showProductSalesRecap ? (
+                <>
+                  <EyeOff className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+                  <span>Sembunyikan</span>
+                  <ChevronUp className="w-3.5 h-3.5" />
+                </>
+              ) : (
+                <>
+                  <Eye className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                  <span>Tampilkan ({productSalesSummary.list.length} Produk)</span>
+                  <ChevronDown className="w-3.5 h-3.5" />
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {showProductSalesRecap && (
+          productSalesSummary.list.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 animate-in fade-in duration-150">
+              {productSalesSummary.list.map((item) => (
+                <div
+                  key={item.name}
+                  className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-700/80 flex flex-col justify-between gap-2"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-extrabold text-xs text-slate-900 dark:text-white truncate" title={item.name}>
+                        {item.name}
+                      </div>
+                      <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                        Dipesan di <strong>{item.orderCount} PO</strong> • Omzet:{' '}
+                        <strong className="font-mono text-slate-700 dark:text-slate-300">
+                          Rp {item.totalRevenue.toLocaleString('id-ID')}
+                        </strong>
+                      </div>
+                    </div>
+                    <div className="px-2.5 py-1 rounded-lg bg-indigo-600 text-white font-mono font-extrabold text-xs shrink-0 shadow-2xs">
+                      {item.totalQty} unit
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-200/70 dark:border-slate-800 flex items-center justify-between text-[10px] font-semibold">
+                    <div className="flex items-center gap-2">
+                      <span className="text-emerald-600 dark:text-emerald-400">
+                        ✓ Lunas: <strong className="font-mono">{item.paidQty}</strong>
+                      </span>
+                      <span className="text-amber-600 dark:text-amber-400">
+                        ⏳ Pending: <strong className="font-mono">{item.pendingQty}</strong>
+                      </span>
+                    </div>
+                    {item.inCatalog && item.stock !== undefined && (
+                      <span className="text-slate-500 dark:text-slate-400">
+                        Sisa Stok: <strong className="font-mono text-slate-800 dark:text-slate-200">{item.stock}</strong>
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-3 text-xs text-slate-400">
+              Belum ada produk yang terjual / ter-PO.
+            </div>
+          )
+        )}
       </div>
 
       {/* Clean Admin Sub-Navigation Menu Bar */}
@@ -3152,6 +3365,9 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
             {formData.products.map((prod, idx) => {
               const isOutOfStock = prod.stock === 0;
               const isLowStock = prod.stock > 0 && prod.stock <= 5;
+              const prodStat = productSalesSummary.list.find(
+                (s) => s.name.trim().toUpperCase() === prod.name.trim().toUpperCase()
+              );
 
               return (
                 <div
@@ -3172,7 +3388,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                         className="font-bold text-sm text-slate-900 dark:text-white bg-transparent border-b border-dashed border-slate-300 dark:border-slate-700 focus:outline-none focus:border-indigo-500 w-full"
                         placeholder="Nama Produk..."
                       />
-                      <div className="mt-1">
+                      <div className="mt-1 flex items-center gap-1.5 flex-wrap">
                         {isOutOfStock ? (
                           <span className="px-2 py-0.5 text-[10px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 rounded border border-rose-200 dark:border-rose-900">
                             Stok Habis (0)
@@ -3186,6 +3402,9 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                             Tersedia ({prod.stock} unit)
                           </span>
                         )}
+                        <span className="px-2 py-0.5 text-[10px] font-bold bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300 rounded border border-indigo-200 dark:border-indigo-900">
+                          Ter-PO: {prodStat?.totalQty || 0} unit ({prodStat?.paidQty || 0} Lunas)
+                        </span>
                       </div>
                     </div>
 
