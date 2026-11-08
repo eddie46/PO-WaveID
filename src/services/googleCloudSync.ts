@@ -41,16 +41,16 @@ export function subscribeToOrders(
   return subscribeToSheetsRealtime((data) => {
     console.log('Realtime sync received data:', data);
     
+    // Skip overwriting orders, settings & products if a save/resequence is currently in-flight or just completed (< 8s ago)
+    if (isSavingSettings || Date.now() - lastSavedSettingsAt < 8000) {
+      console.log('Skipping poll update because local save/resequence is in-flight or recent.');
+      return;
+    }
+
     // 1. Sync Orders (Allow empty array)
     if (data.orders) {
       simpleStorage.saveOrders(data.orders);
       onData(data.orders);
-    }
-    
-    // Skip overwriting settings & products if a save is currently in-flight or just completed (< 8s ago)
-    if (isSavingSettings || Date.now() - lastSavedSettingsAt < 8000) {
-      console.log('Skipping settings/products poll update because local save is in-flight or recent.');
-      return;
     }
 
     // 2. Sync Admin Config (from DanaConfig table or Settings fallback) & Products (from Products table)
@@ -270,16 +270,88 @@ export async function deductStockCloud(items: { name: string; quantity: number }
   return updatedConfig;
 }
 
-export async function resequenceOrdersCloud(sourceOrders?: SimplePOOrder[]): Promise<{ orders: SimplePOOrder[]; changedCount: number }> {
-  // Simple resequence logic for Google Sheets mode
-  const current = sourceOrders || simpleStorage.getOrders();
-  // ... existing resequence logic is complex, for now we just return current
-  return { orders: current, changedCount: 0 };
+export async function resequenceOrdersCloud(
+  sourceOrders?: SimplePOOrder[]
+): Promise<{ orders: SimplePOOrder[]; changedCount: number }> {
+  const current = [...(sourceOrders || simpleStorage.getOrders())];
+  if (current.length === 0) {
+    return { orders: [], changedCount: 0 };
+  }
+
+  // Sort orders chronologically by createdAt (oldest first gets 001, newest gets N)
+  const chronological = [...current].sort((a, b) => {
+    const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    if (!isNaN(timeA) && !isNaN(timeB) && timeA !== timeB) {
+      return timeA - timeB;
+    }
+    return String(a.id || '').localeCompare(String(b.id || ''));
+  });
+
+  const now = new Date();
+  const fallbackPrefix = `PO-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}-`;
+
+  let changedCount = 0;
+  const newPoById = new Map<string, string>();
+
+  chronological.forEach((order, idx) => {
+    const seqStr = String(idx + 1).padStart(3, '0');
+    // Preserve existing PO-YYYYMM- prefix if valid, or derive from order.createdAt
+    let prefix = fallbackPrefix;
+    const existingMatch = (order.poNumber || '').trim().match(/^(PO-\d{6}-)/i);
+    if (existingMatch) {
+      prefix = existingMatch[1].toUpperCase();
+    } else if (order.createdAt) {
+      const d = new Date(order.createdAt);
+      if (!isNaN(d.getTime())) {
+        prefix = `PO-${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}-`;
+      }
+    }
+
+    const expectedPoNumber = `${prefix}${seqStr}`;
+    if ((order.poNumber || '').trim().toUpperCase() !== expectedPoNumber.toUpperCase()) {
+      changedCount++;
+    }
+    newPoById.set(order.id, expectedPoNumber);
+  });
+
+  // Map back while keeping newest-first display order (or existing list order)
+  const resequencedOrders = [...chronological]
+    .reverse()
+    .map((order) => ({
+      ...order,
+      poNumber: newPoById.get(order.id) || order.poNumber,
+    }));
+
+  isSavingSettings = true;
+  lastSavedSettingsAt = Date.now();
+  simpleStorage.saveOrders(resequencedOrders);
+  try {
+    if (isSheetsActive()) {
+      await saveAllOrdersToSheets(resequencedOrders);
+    }
+  } catch (err) {
+    console.warn('Failed to sync resequenced orders to Google Sheets:', err);
+  } finally {
+    lastSavedSettingsAt = Date.now();
+    isSavingSettings = false;
+  }
+
+  return { orders: resequencedOrders, changedCount };
 }
 
 export async function deleteAllOrdersCloud(): Promise<void> {
+  isSavingSettings = true;
+  lastSavedSettingsAt = Date.now();
   simpleStorage.saveOrders([]);
-  // Google Sheets would need a special action for this, or we just ignore for safety
+  try {
+    if (isSheetsActive()) {
+      await saveAllOrdersToSheets([]);
+    }
+  } finally {
+    lastSavedSettingsAt = Date.now();
+    isSavingSettings = false;
+  }
 }
 
 // Dummy/Compatibility exports
