@@ -210,7 +210,7 @@ function doPost(e) {
     // Backward-compatible saveSetting (juga otomatis menulis ke tabel DanaConfig & WhatsAppConfig)
     if (action === 'saveSetting') {
       const { key, value } = payload;
-      if (key === 'adminConfig' && value) {
+      if ((key === 'adminConfig' || key === 'danaConfig_v2') && value) {
         saveDanaSheet(ss, value);
         if (Array.isArray(value.products)) {
           const prodSheet = ss.getSheetByName(CONFIG.sheetNameProducts);
@@ -222,25 +222,19 @@ function doPost(e) {
           prodSheet.getRange(1, 1, prodRows.length, prodRows[0].length).setValues(prodRows);
         }
       }
-      if (key === 'waConfig' && value) {
+      if ((key === 'waConfig' || key === 'waConfig_v2') && value) {
         saveWASheet(ss, value);
       }
 
       const sheet = ss.getSheetByName(CONFIG.sheetNameSettings);
       const data = sheet.getDataRange().getValues();
-      let rowIndex = -1;
-      for (let i = 1; i < data.length; i++) {
+      for (let i = data.length - 1; i >= 1; i--) {
         if (data[i][0] == key) {
-          rowIndex = i + 1;
-          break;
+          sheet.deleteRow(i + 1);
         }
       }
       const valJson = JSON.stringify(value);
-      if (rowIndex > 0) {
-        sheet.getRange(rowIndex, 2).setValue(valJson);
-      } else {
-        sheet.appendRow([key, valJson]);
-      }
+      sheet.appendRow([key, valJson]);
       result.success = true;
     }
 

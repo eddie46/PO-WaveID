@@ -53,8 +53,8 @@ export function subscribeToOrders(
       onData(data.orders);
     }
 
-    // 2. Sync Admin Config (from DanaConfig table or Settings fallback) & Products (from Products table)
-    const cloudAdmin = data.danaConfig || data.settings?.adminConfig;
+    // 2. Sync Admin Config (from DanaConfig table, danaConfig_v2, or Settings fallback) & Products (from Products table)
+    const cloudAdmin = data.danaConfig || data.settings?.danaConfig_v2 || data.settings?.adminConfig;
     if (onAdminConfig && (cloudAdmin || Array.isArray(data.products))) {
       const currentAdmin = simpleStorage.getAdminConfig();
 
@@ -99,8 +99,8 @@ export function subscribeToOrders(
       onAdminConfig(updatedAdmin);
     }
 
-    // 3. Sync WA Config (from WhatsAppConfig table or Settings fallback)
-    const cloudWA = data.waConfig || data.settings?.waConfig;
+    // 3. Sync WA Config (from WhatsAppConfig table, waConfig_v2, or Settings fallback)
+    const cloudWA = data.waConfig || data.settings?.waConfig_v2 || data.settings?.waConfig;
     if (cloudWA && onWAConfig && typeof cloudWA === 'object') {
       const currentWA = simpleStorage.getWAConfig();
       const updatedWA: WAConfig = {
@@ -165,7 +165,7 @@ export async function deleteOrderCloud(orderId: string): Promise<void> {
 }
 
 /**
- * Save Admin Store Config (saves to DanaConfig table, Products table, and Settings fallback)
+ * Save Admin Store Config (saves to DanaConfig table, Products table, danaConfig_v2, and Settings fallback)
  */
 export async function saveAdminConfigCloud(config: AdminStoreConfig): Promise<AdminStoreConfig> {
   isSavingSettings = true;
@@ -182,6 +182,12 @@ export async function saveAdminConfigCloud(config: AdminStoreConfig): Promise<Ad
             : config.qrisImageUrl,
       };
       await saveDanaConfigToSheets(safeSheetConfig);
+      await saveSettingToSheets('danaConfig_v2', {
+        danaPhone: safeSheetConfig.danaPhone || '',
+        danaAccountName: safeSheetConfig.danaAccountName || '',
+        autoDeductStock: safeSheetConfig.autoDeductStock !== false,
+        qrisImageUrl: safeSheetConfig.qrisImageUrl || '',
+      });
       await saveSettingToSheets('adminConfig', safeSheetConfig);
       if (config.products) {
         await saveProductsToSheets(config.products);
@@ -195,7 +201,7 @@ export async function saveAdminConfigCloud(config: AdminStoreConfig): Promise<Ad
 }
 
 /**
- * Save WA Config (saves to WhatsAppConfig table and Settings fallback)
+ * Save WA Config (saves to WhatsAppConfig table, waConfig_v2, and Settings fallback)
  */
 export async function saveWAConfigCloud(config: WAConfig): Promise<WAConfig> {
   isSavingSettings = true;
@@ -205,6 +211,7 @@ export async function saveWAConfigCloud(config: WAConfig): Promise<WAConfig> {
     if (isSheetsActive()) {
       console.log('Sending WhatsAppConfig payload to Sheets:', config);
       await saveWAConfigToSheets(config);
+      await saveSettingToSheets('waConfig_v2', config);
       await saveSettingToSheets('waConfig', config);
     }
   } finally {

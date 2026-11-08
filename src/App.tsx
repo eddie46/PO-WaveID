@@ -122,15 +122,51 @@ export default function App() {
     
     let currentOrders = orders;
     
-    // 1. Fetch latest data from Google Sheets immediately to get the absolute latest PO count
+    // 1. Fetch latest data from Google Sheets immediately to get the absolute latest PO count & payment/WA config
+    let latestDanaPhone = adminConfig.danaPhone;
     try {
       const cloudData = await fetchAllDataFromSheets();
-      if (cloudData && cloudData.orders) {
-        currentOrders = cloudData.orders;
-        setOrders(cloudData.orders);
-        if (cloudData.products) {
-           const currentAdmin = simpleStorage.getAdminConfig();
-           setAdminConfig({ ...currentAdmin, products: cloudData.products });
+      if (cloudData) {
+        if (cloudData.orders) {
+          currentOrders = cloudData.orders;
+          setOrders(cloudData.orders);
+        }
+        const cloudAdmin = cloudData.danaConfig || cloudData.settings?.danaConfig_v2 || cloudData.settings?.adminConfig;
+        if (cloudAdmin || cloudData.products) {
+          const currentAdmin = simpleStorage.getAdminConfig();
+          const updatedAdmin: AdminStoreConfig = {
+            ...currentAdmin,
+            ...(cloudAdmin || {}),
+            danaPhone:
+              cloudAdmin?.danaPhone !== undefined && cloudAdmin.danaPhone !== ''
+                ? String(cloudAdmin.danaPhone).replace(/^'+/, '')
+                : currentAdmin.danaPhone,
+            danaAccountName:
+              cloudAdmin?.danaAccountName !== undefined && cloudAdmin.danaAccountName !== ''
+                ? String(cloudAdmin.danaAccountName)
+                : currentAdmin.danaAccountName,
+            products:
+              Array.isArray(cloudData.products) && cloudData.products.length > 0
+                ? cloudData.products
+                : currentAdmin.products,
+          };
+          latestDanaPhone = updatedAdmin.danaPhone;
+          simpleStorage.saveAdminConfig(updatedAdmin);
+          setAdminConfig(updatedAdmin);
+        }
+        const cloudWA = cloudData.waConfig || cloudData.settings?.waConfig_v2 || cloudData.settings?.waConfig;
+        if (cloudWA) {
+          const currentWA = simpleStorage.getWAConfig();
+          const updatedWA: WAConfig = {
+            ...currentWA,
+            ...cloudWA,
+            phoneNumber:
+              cloudWA.phoneNumber !== undefined && cloudWA.phoneNumber !== ''
+                ? String(cloudWA.phoneNumber).replace(/^'+/, '')
+                : currentWA.phoneNumber,
+          };
+          simpleStorage.saveWAConfig(updatedWA);
+          setWAConfig(updatedWA);
         }
       }
     } catch (err) {
@@ -151,7 +187,7 @@ export default function App() {
     }
 
     // 5. Copy formatted text to clipboard automatically
-    const text = formatSimpleOrderForWA(newOrder, adminConfig.danaPhone);
+    const text = formatSimpleOrderForWA(newOrder, latestDanaPhone);
     try {
       navigator.clipboard.writeText(text);
     } catch {

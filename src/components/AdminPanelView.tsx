@@ -438,8 +438,8 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
         return;
       }
 
-      const remoteAdmin = raw.danaConfig || raw.settings?.adminConfig || {};
-      const remoteWA = raw.waConfig || raw.settings?.waConfig || {};
+      const remoteAdmin = raw.danaConfig || raw.settings?.danaConfig_v2 || raw.settings?.adminConfig || {};
+      const remoteWA = raw.waConfig || raw.settings?.waConfig_v2 || raw.settings?.waConfig || {};
       const remoteProductsCount = Array.isArray(raw.products) ? raw.products.length : 0;
       const remoteOrdersCount = Array.isArray(raw.orders) ? raw.orders.length : 0;
       const remoteExpensesCount = Array.isArray(raw.expenses) ? raw.expenses.length : 0;
@@ -447,7 +447,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
       const hasSettingsSheet = Boolean(
         raw.danaConfig ||
         raw.waConfig ||
-        (raw.settings && (raw.settings.adminConfig || raw.settings.waConfig))
+        (raw.settings && (raw.settings.danaConfig_v2 || raw.settings.waConfig_v2 || raw.settings.adminConfig || raw.settings.waConfig))
       );
 
       const cleanLocalDanaPhone = String(formData.danaPhone || '').replace(/^'+/, '');
@@ -611,7 +611,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
           simpleStorage.saveExpenses(data.expenses);
           setExpenses(data.expenses);
         }
-        const incomingDana = data.danaConfig || data.settings?.adminConfig;
+        const incomingDana = data.danaConfig || data.settings?.danaConfig_v2 || data.settings?.adminConfig;
         if (incomingDana || Array.isArray(data.products)) {
           const mergedAdmin: AdminStoreConfig = {
             ...formData,
@@ -627,7 +627,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
           simpleStorage.saveAdminConfig(mergedAdmin);
           onSaveConfig(mergedAdmin);
         }
-        const incomingWA = data.waConfig || data.settings?.waConfig;
+        const incomingWA = data.waConfig || data.settings?.waConfig_v2 || data.settings?.waConfig;
         if (incomingWA) {
           const mergedWA: WAConfig = {
             ...formWA,
