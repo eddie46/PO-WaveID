@@ -8,7 +8,7 @@ export function getGoogleSheetsUrl(): string {
   if (stored) return stored;
   
   // URL restored for convenience, but be aware this is now public.
-  return 'https://script.google.com/macros/s/AKfycbwVbUGxhGpqwZfqJH8VZ0FspPRQt5lBRKYbaftFyaa4jnpH6pgFNzENZK5gtm9dtiegWA/exec';
+  return 'https://script.google.com/macros/s/AKfycbzDMVrUYgp1AV-biOPJ6m3On_RUAUm0eU6exNlCNcr6/dev';
 }
 
 export function saveGoogleSheetsUrl(url: string): void {
