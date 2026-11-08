@@ -307,17 +307,48 @@ function doGet(e) {
     if (orderSheet) {
       const rows = orderSheet.getDataRange().getValues();
       for (let i = 1; i < rows.length; i++) {
+        if (!rows[i][0] && !rows[i][1]) continue;
+        const colId = String(rows[i][0] || `ord-${i}`);
+        const colPo = String(rows[i][1] || '');
+        const colName = String(rows[i][2] || '');
+        const colPhone = String(rows[i][3] || '').replace(/^'+/, '');
+        const colTotal = Number(rows[i][4]);
+        const rawStatusStr = String(rows[i][5] || '').trim().toUpperCase();
+        const isColPaid =
+          rawStatusStr === 'PAID' ||
+          rawStatusStr === 'LUNAS' ||
+          rawStatusStr === 'SUDAH LUNAS' ||
+          rawStatusStr === 'SUDAH BAYAR' ||
+          rawStatusStr === 'TRUE';
+
         try {
-          const raw = JSON.parse(rows[i][7]);
-          data.orders.push(raw);
+          const raw = rows[i][7] ? JSON.parse(rows[i][7]) : {};
+          const rawPaid =
+            String(raw.paymentStatus || '').trim().toUpperCase() === 'PAID' ||
+            String(raw.paymentStatus || '').trim().toUpperCase() === 'LUNAS';
+          // Column F (payment_status) takes precedence if explicitly edited in Sheets
+          const finalStatus = rawStatusStr
+            ? (isColPaid ? 'PAID' : 'PENDING')
+            : (rawPaid ? 'PAID' : 'PENDING');
+
+          data.orders.push(Object.assign({}, raw, {
+            id: colId || raw.id,
+            poNumber: colPo || raw.poNumber,
+            customerName: colName || raw.customerName,
+            customerPhone: colPhone || String(raw.customerPhone || '').replace(/^'+/, ''),
+            totalPrice: !isNaN(colTotal) && rows[i][4] !== '' ? colTotal : raw.totalPrice,
+            paymentStatus: finalStatus,
+            items: Array.isArray(raw.items) ? raw.items : JSON.parse(rows[i][6] || '[]'),
+            createdAt: raw.createdAt || rows[i][8]
+          }));
         } catch(e) {
           data.orders.push({
-            id: rows[i][0],
-            poNumber: rows[i][1],
-            customerName: rows[i][2],
-            customerPhone: String(rows[i][3] || ''),
-            totalPrice: rows[i][4],
-            paymentStatus: rows[i][5],
+            id: colId,
+            poNumber: colPo,
+            customerName: colName,
+            customerPhone: colPhone,
+            totalPrice: !isNaN(colTotal) ? colTotal : 0,
+            paymentStatus: isColPaid ? 'PAID' : 'PENDING',
             items: JSON.parse(rows[i][6] || '[]'),
             createdAt: rows[i][8]
           });

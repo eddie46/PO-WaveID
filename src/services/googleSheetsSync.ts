@@ -8,7 +8,7 @@ export function getGoogleSheetsUrl(): string {
   if (stored) return stored;
   
   // URL restored for convenience, but be aware this is now public.
-  return 'https://script.google.com/macros/s/AKfycbwEM0vdCVVwr_8-tycUhmQW7QMVDqaZXbFkeCWPgGh6sFxobuYBSOcQlghDVTlp23asXA/exec';
+  return 'https://script.google.com/macros/s/AKfycbwVbUGxhGpqwZfqJH8VZ0FspPRQt5lBRKYbaftFyaa4jnpH6pgFNzENZK5gtm9dtiegWA/exec';
 }
 
 export function saveGoogleSheetsUrl(url: string): void {
@@ -49,8 +49,44 @@ async function callGsAction(action: string, data?: any) {
   }
 }
 
+function normalizePaymentStatus(rawStatus: any): 'PAID' | 'PENDING' {
+  const val = String(rawStatus ?? '').trim().toUpperCase();
+  if (
+    val === 'PAID' ||
+    val === 'LUNAS' ||
+    val === 'SUDAH LUNAS' ||
+    val === 'SUDAH BAYAR' ||
+    val === 'TERVERIFIKASI' ||
+    val === 'DONE' ||
+    val === 'TRUE' ||
+    val === '1'
+  ) {
+    return 'PAID';
+  }
+  return 'PENDING';
+}
+
+export function normalizeOrderFromSheets(raw: any): SimplePOOrder {
+  const statusCandidate =
+    raw?.paymentStatus ?? raw?.payment_status ?? raw?.status ?? raw?.statusPembayaran ?? 'PENDING';
+  const normalizedStatus = normalizePaymentStatus(statusCandidate);
+  return {
+    ...raw,
+    customerPhone: String(raw?.customerPhone ?? raw?.customer_phone ?? '').replace(/^'+/, ''),
+    paymentStatus: normalizedStatus,
+    paidAt:
+      normalizedStatus === 'PAID'
+        ? raw?.paidAt || raw?.createdAt || new Date().toISOString()
+        : undefined,
+  };
+}
+
 export async function fetchAllDataFromSheets() {
-  return await callGsAction('getData');
+  const res = await callGsAction('getData');
+  if (res && Array.isArray(res.orders)) {
+    res.orders = res.orders.map(normalizeOrderFromSheets);
+  }
+  return res;
 }
 
 export async function upsertOrderToSheets(order: SimplePOOrder) {
