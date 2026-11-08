@@ -91,7 +91,9 @@ function saveWASheet(ss, cfg) {
 
 function doPost(e) {
   const result = { success: false, message: '' };
+  const lock = LockService.getScriptLock();
   try {
+    lock.waitLock(25000);
     setup(); // Ensure all sheets exist before processing
     const payload = JSON.parse(e.postData.contents);
     const action = payload.action;
@@ -134,10 +136,9 @@ function doPost(e) {
       const id = payload.id;
       const sheet = ss.getSheetByName(CONFIG.sheetNameOrders);
       const data = sheet.getDataRange().getValues();
-      for (let i = 1; i < data.length; i++) {
+      for (let i = data.length - 1; i >= 1; i--) {
         if (data[i][0] == id) {
           sheet.deleteRow(i + 1);
-          break;
         }
       }
       result.success = true;
@@ -171,10 +172,9 @@ function doPost(e) {
       const id = payload.id;
       const sheet = ss.getSheetByName(CONFIG.sheetNameExpenses);
       const data = sheet.getDataRange().getValues();
-      for (let i = 1; i < data.length; i++) {
+      for (let i = data.length - 1; i >= 1; i--) {
         if (data[i][0] == id) {
           sheet.deleteRow(i + 1);
-          break;
         }
       }
       result.success = true;
@@ -185,10 +185,11 @@ function doPost(e) {
       const products = payload.data || [];
       const sheet = ss.getSheetByName(CONFIG.sheetNameProducts);
       sheet.clearContents();
-      sheet.appendRow(['id', 'name', 'price', 'stock', 'maxPerOrder', 'isActive', 'description']);
+      const rows = [['id', 'name', 'price', 'stock', 'maxPerOrder', 'isActive', 'description']];
       products.forEach(p => {
-        sheet.appendRow([p.id, p.name, p.price, p.stock, p.maxPerOrder, p.isActive, p.description]);
+        rows.push([p.id, p.name, p.price, p.stock, p.maxPerOrder, p.isActive, p.description]);
       });
+      sheet.getRange(1, 1, rows.length, rows[0].length).setValues(rows);
       result.success = true;
     }
 
@@ -214,10 +215,11 @@ function doPost(e) {
         if (Array.isArray(value.products)) {
           const prodSheet = ss.getSheetByName(CONFIG.sheetNameProducts);
           prodSheet.clearContents();
-          prodSheet.appendRow(['id', 'name', 'price', 'stock', 'maxPerOrder', 'isActive', 'description']);
+          const prodRows = [['id', 'name', 'price', 'stock', 'maxPerOrder', 'isActive', 'description']];
           value.products.forEach(p => {
-            prodSheet.appendRow([p.id, p.name, p.price, p.stock, p.maxPerOrder, p.isActive, p.description]);
+            prodRows.push([p.id, p.name, p.price, p.stock, p.maxPerOrder, p.isActive, p.description]);
           });
+          prodSheet.getRange(1, 1, prodRows.length, prodRows[0].length).setValues(prodRows);
         }
       }
       if (key === 'waConfig' && value) {
@@ -243,12 +245,13 @@ function doPost(e) {
     }
 
     if (action === 'saveAllOrders') {
-      const orders = payload.data;
+      const orders = payload.data || [];
       const sheet = ss.getSheetByName(CONFIG.sheetNameOrders);
       sheet.clearContents();
-      sheet.appendRow(['id', 'po_number', 'customer_name', 'customer_phone', 'total_price', 'payment_status', 'items_json', 'raw_data_json', 'created_at']);
+      const rows = [['id', 'po_number', 'customer_name', 'customer_phone', 'total_price', 'payment_status', 'items_json', 'raw_data_json', 'created_at']];
       orders.forEach(order => {
-        const rowData = [
+        if (!order || order.id === 'id') return;
+        rows.push([
           order.id,
           order.poNumber,
           order.customerName,
@@ -258,25 +261,26 @@ function doPost(e) {
           JSON.stringify(order.items),
           JSON.stringify(order),
           order.createdAt || new Date().toISOString()
-        ];
-        sheet.appendRow(rowData);
+        ]);
       });
+      sheet.getRange(1, 1, rows.length, rows[0].length).setValues(rows);
       result.success = true;
     }
 
     if (action === 'saveAllExpenses') {
-      const expenses = payload.data;
+      const expenses = payload.data || [];
       const sheet = ss.getSheetByName(CONFIG.sheetNameExpenses);
       sheet.clearContents();
-      sheet.appendRow(['id', 'date', 'title', 'category', 'amount', 'paymentMethod', 'recipientOrVendor', 'notes', 'created_at']);
+      const rows = [['id', 'date', 'title', 'category', 'amount', 'paymentMethod', 'recipientOrVendor', 'notes', 'created_at']];
       expenses.forEach(exp => {
-        const rowData = [
+        if (!exp || exp.id === 'id') return;
+        rows.push([
           exp.id, exp.date, exp.title, exp.category, exp.amount, 
           exp.paymentMethod, exp.recipientOrVendor, exp.notes, 
           exp.createdAt || new Date().toISOString()
-        ];
-        sheet.appendRow(rowData);
+        ]);
       });
+      sheet.getRange(1, 1, rows.length, rows[0].length).setValues(rows);
       result.success = true;
     }
 
@@ -284,6 +288,10 @@ function doPost(e) {
   } catch (err) {
     result.message = err.toString();
     return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
+  } finally {
+    try {
+      lock.releaseLock();
+    } catch (e) {}
   }
 }
 
