@@ -199,7 +199,7 @@ export async function saveAllExpensesToSheets(expenses: OperationalExpense[]) {
 }
 
 /**
- * Real-time polling for Google Sheets (Polite Polling)
+ * Real-time polling for Google Sheets (Polite Polling + Instant Tab-Focus Sync)
  */
 export function subscribeToSheetsRealtime(
   onData: (data: {
@@ -212,20 +212,40 @@ export function subscribeToSheetsRealtime(
   }) => void
 ): () => void {
   let isCancelled = false;
+  let isPolling = false;
   
   const poll = async () => {
-    if (isCancelled || !getGoogleSheetsUrl()) return;
-    const data = await fetchAllDataFromSheets();
-    if (data && !isCancelled) {
-      onData(data);
+    if (isCancelled || isPolling || !getGoogleSheetsUrl()) return;
+    isPolling = true;
+    try {
+      const data = await fetchAllDataFromSheets();
+      if (data && !isCancelled) {
+        onData(data);
+      }
+    } finally {
+      isPolling = false;
     }
   };
 
+  const handleVisibilityOrFocus = () => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+    poll();
+  };
+
   poll();
-  const interval = setInterval(poll, 20000); // 20s polling for Sheets to be safe with quota
+  const interval = setInterval(poll, 10000); // 10s polling + instant sync on tab focus
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+  }
 
   return () => {
     isCancelled = true;
     clearInterval(interval);
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+    }
   };
 }

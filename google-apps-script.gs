@@ -339,9 +339,10 @@ function doGet(e) {
             rawStatusStr === 'TRUE';
 
           const raw = safeParseJson(rows[i][7], {});
-          const parsedItems = Array.isArray(raw.items)
-            ? raw.items
-            : safeParseJson(rows[i][6], []);
+          const colItems = safeParseJson(rows[i][6], null);
+          const parsedItems = Array.isArray(colItems)
+            ? colItems
+            : (Array.isArray(raw.items) ? raw.items : []);
 
           const rawPaid =
             String(raw.paymentStatus || '').trim().toUpperCase() === 'PAID' ||
@@ -358,7 +359,7 @@ function doGet(e) {
             totalPrice: !isNaN(colTotal) && rows[i][4] !== '' ? colTotal : (raw.totalPrice || 0),
             paymentStatus: finalStatus,
             items: Array.isArray(parsedItems) ? parsedItems : [],
-            createdAt: raw.createdAt || rows[i][8] || new Date().toISOString()
+            createdAt: rows[i][8] || raw.createdAt || new Date().toISOString()
           }));
         }
       }
