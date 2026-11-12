@@ -256,6 +256,14 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
 
   // Invoice / Receipt Printing Modal State
   const [invoiceOrder, setInvoiceOrder] = useState<SimplePOOrder | null>(null);
+  const [detailCustomerOrder, setDetailCustomerOrder] = useState<SimplePOOrder | null>(null);
+  const [copiedCustomerDetailKey, setCopiedCustomerDetailKey] = useState<string | null>(null);
+
+  const handleCopyCustomerDetail = (key: string, val: string) => {
+    navigator.clipboard.writeText(val);
+    setCopiedCustomerDetailKey(key);
+    setTimeout(() => setCopiedCustomerDetailKey(null), 2000);
+  };
 
   // Admin Edit Order Modal State (in Verifikasi Tab)
   const [editingOrder, setEditingOrder] = useState<SimplePOOrder | null>(null);
@@ -2610,8 +2618,18 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                       </div>
                     </div>
 
-                    {/* Action Buttons: Edit, Cetak Struk, Tandai Lunas, Undang WA & Hapus Data */}
+                    {/* Action Buttons: Rincian, Edit, Cetak Struk, Tandai Lunas, Undang WA & Hapus Data */}
                     <div className="flex items-center gap-2 shrink-0 self-end sm:self-center flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => setDetailCustomerOrder(order)}
+                        className="px-2.5 py-1.5 text-xs font-bold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/70 hover:bg-blue-100 dark:hover:bg-blue-900 rounded-xl transition-all border border-blue-200 dark:border-blue-800 inline-flex items-center gap-1 cursor-pointer shadow-2xs"
+                        title="Lihat Rincian Nama, Nomor HP, dan Alamat Pemesan"
+                      >
+                        <Eye className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                        <span>Rincian</span>
+                      </button>
+
                       <button
                         type="button"
                         onClick={() => handleOpenEditOrder(order)}
@@ -2986,8 +3004,17 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                       </div>
                     </div>
 
-                    {/* Current Shipping Status Badge */}
-                    <div className="self-start sm:self-auto">
+                    {/* Current Shipping Status Badge & Rincian Button */}
+                    <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => setDetailCustomerOrder(order)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/70 hover:bg-indigo-100 dark:hover:bg-indigo-900 border border-indigo-200 dark:border-indigo-800 transition-all cursor-pointer shadow-2xs"
+                        title="Lihat Rincian Nama, Nomor HP, dan Alamat Pemesan"
+                      >
+                        <Eye className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                        <span>Rincian</span>
+                      </button>
                       {isDelivered ? (
                         <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-extrabold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300">
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
@@ -6080,6 +6107,122 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                     <span>Mulai Impor ({importMode === 'replace' ? 'Timpa Semua' : 'Gabungkan'})</span>
                   </>
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL RINCIAN DATA PEMESAN (NAMA, NOMOR HP, ALAMAT) */}
+      {detailCustomerOrder && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl p-5 sm:p-6 space-y-4 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-indigo-100 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                  <Eye className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-white">
+                    Rincian Data Pemesan
+                  </h3>
+                  <span className="font-mono text-xs font-bold text-indigo-600 dark:text-indigo-400">
+                    {detailCustomerOrder.poNumber}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDetailCustomerOrder(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              {/* Nama Pemesan */}
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700/80 flex items-start justify-between gap-2">
+                <div className="space-y-0.5">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    👤 Nama Pemesan
+                  </span>
+                  <p className="font-bold text-sm text-slate-900 dark:text-white break-words">
+                    {detailCustomerOrder.customerName || '-'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleCopyCustomerDetail('name', detailCustomerOrder.customerName || '')}
+                  className="px-2 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-600 dark:text-slate-300 hover:text-indigo-600 inline-flex items-center gap-1 cursor-pointer shrink-0"
+                >
+                  {copiedCustomerDetailKey === 'name' ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                  <span>{copiedCustomerDetailKey === 'name' ? 'Tersalin' : 'Salin'}</span>
+                </button>
+              </div>
+
+              {/* Nomor HP */}
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700/80 flex items-start justify-between gap-2">
+                <div className="space-y-0.5">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    📱 Nomor HP / WhatsApp
+                  </span>
+                  <p className="font-mono font-bold text-sm text-indigo-600 dark:text-indigo-400">
+                    {detailCustomerOrder.customerPhone || '-'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleCopyCustomerDetail('phone', detailCustomerOrder.customerPhone || '')}
+                  className="px-2 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-600 dark:text-slate-300 hover:text-indigo-600 inline-flex items-center gap-1 cursor-pointer shrink-0"
+                >
+                  {copiedCustomerDetailKey === 'phone' ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                  <span>{copiedCustomerDetailKey === 'phone' ? 'Tersalin' : 'Salin'}</span>
+                </button>
+              </div>
+
+              {/* Alamat Lengkap */}
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700/80 flex items-start justify-between gap-2">
+                <div className="space-y-1 flex-1 min-w-0">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    📍 Alamat Lengkap Pemesan
+                  </span>
+                  <p className="text-xs leading-relaxed text-slate-800 dark:text-slate-200 whitespace-pre-wrap break-words">
+                    {detailCustomerOrder.customerAddress || '-'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleCopyCustomerDetail('address', detailCustomerOrder.customerAddress || '')}
+                  className="px-2 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-600 dark:text-slate-300 hover:text-indigo-600 inline-flex items-center gap-1 cursor-pointer shrink-0"
+                >
+                  {copiedCustomerDetailKey === 'address' ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                  <span>{copiedCustomerDetailKey === 'address' ? 'Tersalin' : 'Salin'}</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() =>
+                  handleCopyCustomerDetail(
+                    'all',
+                    `No. PO: ${detailCustomerOrder.poNumber}\nNama: ${detailCustomerOrder.customerName || '-'}\nNo. HP: ${detailCustomerOrder.customerPhone || '-'}\nAlamat: ${detailCustomerOrder.customerAddress || '-'}`
+                  )
+                }
+                className="px-3.5 py-2 rounded-xl text-xs font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/80 hover:bg-indigo-100 border border-indigo-200 dark:border-indigo-800 inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                {copiedCustomerDetailKey === 'all' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copiedCustomerDetailKey === 'all' ? 'Semua Data Tersalin!' : 'Salin Semua Data'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setDetailCustomerOrder(null)}
+                className="px-4 py-2 text-xs font-extrabold text-white bg-slate-800 dark:bg-slate-700 hover:bg-slate-700 rounded-xl cursor-pointer"
+              >
+                Tutup
               </button>
             </div>
           </div>
